@@ -194,15 +194,31 @@ function V1Detail({ id, view }: { readonly id: string; readonly view: V1StreamVi
       }
       setResult(res);
     } catch (err) {
+      // PartyLayer collapses ANY ledger failure whose text merely contains
+      // "rejected"/"denied" into a UserRejectedError with the misleading
+      // message "User rejected ledgerApi" — but keeps the real wallet/ledger
+      // reason verbatim on details.originalMessage. Prefer that. Never blame
+      // funds here: the known-low-balance case already returned above, so an
+      // error reaching this catch is by construction NOT insufficient funds.
+      // (Direct SDK path → err.details; the .data.details shape only appears
+      // if a future wallet layer routes through the provider bridge.)
+      const e = err as {
+        message?: string;
+        code?: string;
+        details?: { originalMessage?: string };
+        data?: { details?: { originalMessage?: string } };
+      };
+      console.error('[settle] wallet submit failed', err);
       const raw = err instanceof Error ? err.message : 'Settle failed';
-      // The wallet couldn't sign (you declined the prompt, or the transfer
-      // couldn't be built — most often not enough funds). Say that plainly
-      // instead of leaking the SDK's cryptic "User rejected ledgerApi".
-      if (/user.?rejected|rejected ledgerapi|declined|not.?connected/i.test(raw)) {
+      const original = (e?.details?.originalMessage ?? e?.data?.details?.originalMessage)?.trim();
+      if (original && !/^user rejected/i.test(original)) {
+        setError(`The ledger declined this settle: ${original}`);
+      } else if (e?.code === 'USER_REJECTED' || /user.?rejected|rejected ledgerapi/i.test(raw)) {
         setError(
-          `The wallet didn't sign this settle. You either declined the prompt, or the ` +
-            `transfer couldn't be built — most often not enough ${unit} to cover the cycle. ` +
-            `Nothing was charged; retry when ready.`,
+          `The ledger declined this settle before it committed and the wallet signature ` +
+            `didn't complete — often a coin that was already spent or moved between reading ` +
+            `your balance and signing. Nothing was charged; retry, and if it keeps failing ` +
+            `check the browser console for the underlying ledger reason.`,
         );
       } else {
         setError(raw);
