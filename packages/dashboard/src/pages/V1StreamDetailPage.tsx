@@ -158,6 +158,17 @@ function V1Detail({ id, view }: { readonly id: string; readonly view: V1StreamVi
   const onSettle = async () => {
     setError(null);
     setResult(null);
+    // We already know the wallet can't cover this cycle — say so plainly rather
+    // than firing a doomed wallet prompt that returns a cryptic rejection.
+    if (lowBalance) {
+      const need = Math.max(0, settleCost - (bal.value ?? 0));
+      setError(
+        `Not enough ${unit} to settle this cycle. Your wallet holds ${bal.display ?? '0'} ${unit}, but ` +
+          `this cycle draws ${fmtCC(String(settleCost), unit)} — top up with at least ` +
+          `${fmtCC(String(need), unit)} more, then retry.`,
+      );
+      return;
+    }
     try {
       const res = await settle.mutateAsync({
         id,
@@ -183,7 +194,19 @@ function V1Detail({ id, view }: { readonly id: string; readonly view: V1StreamVi
       }
       setResult(res);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Settle failed');
+      const raw = err instanceof Error ? err.message : 'Settle failed';
+      // The wallet couldn't sign (you declined the prompt, or the transfer
+      // couldn't be built — most often not enough funds). Say that plainly
+      // instead of leaking the SDK's cryptic "User rejected ledgerApi".
+      if (/user.?rejected|rejected ledgerapi|declined|not.?connected/i.test(raw)) {
+        setError(
+          `The wallet didn't sign this settle. You either declined the prompt, or the ` +
+            `transfer couldn't be built — most often not enough ${unit} to cover the cycle. ` +
+            `Nothing was charged; retry when ready.`,
+        );
+      } else {
+        setError(raw);
+      }
     }
   };
 
