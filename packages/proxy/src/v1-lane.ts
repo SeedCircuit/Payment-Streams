@@ -249,6 +249,12 @@ export type ArrearsPolicy = 'catch-up' | 'skip-missed';
 export interface V1Agreement {
   agreementId: string;
   appId?: string;
+  /** Caller-supplied external reference. Stamped verbatim (no cycle/release
+   *  suffix) onto every payout's on-chain metadata as
+   *  `cantonstreams.dev/external-ref`, so a servicing app can reconcile each
+   *  on-ledger payment to its own record without any per-stream binding.
+   *  Distinct from `agreementId` (our internal id). Empty/absent ⇒ not stamped. */
+  externalRef?: string;
   payerParty: string;
   recipientParty: string;
   ratePerPeriod: string;
@@ -1492,6 +1498,11 @@ function streamMeta(agreement: V1Agreement, ref: string): { values: Record<strin
       'cantonstreams.dev/v': '1',
       ...(agreement.appId ? { 'cantonstreams.dev/app': agreement.appId } : {}),
       'cantonstreams.dev/agreement': agreement.agreementId,
+      // Caller's own reference, passed straight through: exactly the string they
+      // supplied, on every cycle, with NO `:cycle-N`/`:release` suffix (unlike
+      // `.../ref` and `.../agreement` above) — the servicing side matches it with
+      // an exact-equality check. Additive; omitted when no ref was supplied.
+      ...(agreement.externalRef ? { 'cantonstreams.dev/external-ref': agreement.externalRef } : {}),
     },
   };
 }
@@ -2439,6 +2450,9 @@ function updateIdRecordedElsewhere(store: V1Store, streamId: string, updateId: s
 export interface CreateV1StreamInput {
   streamId?: string;
   appId?: string;
+  /** Caller-supplied external reference, persisted on the stream and stamped
+   *  verbatim onto every payout (`cantonstreams.dev/external-ref`). */
+  externalRef?: string;
   payerParty: string;
   recipientParty: string;
   /** Amount accrued per cadence period (decimal string). Alias: amount. */
@@ -2646,6 +2660,7 @@ export class V1LaneService {
     const agreement: V1Agreement = {
       agreementId: streamId,
       ...(input.appId ? { appId: input.appId } : {}),
+      ...(input.externalRef ? { externalRef: input.externalRef } : {}),
       payerParty: input.payerParty,
       recipientParty: input.recipientParty,
       ratePerPeriod,

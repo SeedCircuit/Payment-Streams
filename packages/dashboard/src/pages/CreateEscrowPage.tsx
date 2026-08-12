@@ -17,6 +17,7 @@ import { useAssets } from '../hooks/useAssets.js';
 import { useCantonCoinBalance } from '../hooks/useCantonCoinBalance.js';
 import { PageHeader } from '../components/common/index.js';
 import { fmtCc, displayName } from '../lib/format.js';
+import { externalRefFromUrl } from '../lib/externalRef.js';
 
 const CADENCES = [
   { label: 'Every minute', seconds: 60 },
@@ -56,6 +57,9 @@ export function CreateEscrowPage() {
         ratePerCycle: String(rateNum),
         cadenceSeconds,
         totalDeposit: String(depositNum),
+        // Caller-supplied `?ref=`/`?externalRef=`, passed straight through so the
+        // proxy stamps it on every relayed release payout.
+        ...(externalRefFromUrl() ? { externalRef: externalRefFromUrl() } : {}),
         ...(assetKey && assetKey !== 'cc'
           ? {
               assetKey,

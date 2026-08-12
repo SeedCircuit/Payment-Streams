@@ -20,6 +20,7 @@ import { FormField } from '../forms/FormField.js';
 import { FormError } from '../forms/FormError.js';
 import { AssetSelect } from './AssetSelect.js';
 import { fmtCc, fmtAmount, instrumentLabel, displayName } from '../../lib/format.js';
+import { externalRefFromUrl } from '../../lib/externalRef.js';
 import {
   createStreamV1Schema,
   type CreateStreamV1Values,
@@ -108,6 +109,9 @@ export function CreateStreamV1Form() {
       // Only send a key when the picker resolved a whitelisted asset; absent ⇒
       // the proxy defaults to Canton Coin.
       ...(data.assetKey ? { assetKey: data.assetKey } : {}),
+      // Pass a caller-supplied `?ref=`/`?externalRef=` straight through so the
+      // proxy stamps it on every payout's on-chain metadata.
+      ...(externalRefFromUrl() ? { externalRef: externalRefFromUrl() } : {}),
     };
     try {
       const view = await createStream.mutateAsync(params);

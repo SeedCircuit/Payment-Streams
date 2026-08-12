@@ -193,6 +193,11 @@ export interface EscrowAgreement {
   /** The wallet that funded the escrow (recorded only; not a stakeholder). */
   originalPayer: string;
   recipient: string;
+  /** Caller-supplied external reference, stamped verbatim onto every relayed
+   *  release payout (`cantonstreams.dev/external-ref`) so a servicing app can
+   *  reconcile each on-ledger payment — including escrow-relayed ones — to its
+   *  own record. Empty/absent ⇒ not stamped. */
+  externalRef?: string;
   /** Whitelisted asset key this vault streams ('cc' or absent ⇒ Canton Coin). */
   assetKey?: string;
   /** Settlement instrument frozen at create time; absent ⇒ the global CC asset,
@@ -292,6 +297,7 @@ function leg(
   recipient: string,
   id: string,
   instrument?: V1Agreement['instrument'],
+  externalRef?: string,
 ): V1Agreement {
   return {
     agreementId: id,
@@ -302,6 +308,11 @@ function leg(
     effectiveFrom: new Date().toISOString(),
     arrearsPolicy: 'catch-up',
     ...(instrument ? { instrument } : {}),
+    // Carried onto the synthetic per-cycle agreement so `streamMeta` stamps
+    // `cantonstreams.dev/external-ref` on the relayed payout, exactly as the
+    // direct-stream path does. Only release legs pass this — deposits and
+    // refunds are custody movements, not payouts, so they stay unstamped.
+    ...(externalRef ? { externalRef } : {}),
   };
 }
 
@@ -647,6 +658,9 @@ export interface CreateEscrowInput {
    * When omitted, the proxy submits the deposit as `originalPayer` (only works
    * for a party this participant hosts — e.g. dev/hosted payers). */
   fundingTransferId?: string;
+  /** Caller-supplied external reference, persisted on the vault and stamped
+   *  verbatim onto every relayed release (`cantonstreams.dev/external-ref`). */
+  externalRef?: string;
 }
 
 export class EscrowLane {
@@ -1053,6 +1067,7 @@ export class EscrowLane {
       escrowId,
       originalPayer,
       recipient,
+      ...(input.externalRef ? { externalRef: input.externalRef } : {}),
       ...(assetKey ? { assetKey } : {}),
       ...(instrument ? { instrument } : {}),
       ratePerCycle: dec(ratePerCycle),
@@ -1135,7 +1150,7 @@ export class EscrowLane {
     await this.assertPoolSolvent(store, e);
     const res = await settleCycle(
       this.config,
-      leg(this.config.escrowParty, e.recipient, `${escrowId}:release`, e.instrument),
+      leg(this.config.escrowParty, e.recipient, `${escrowId}:release`, e.instrument, e.externalRef),
       amount,
       cycleNo,
     );

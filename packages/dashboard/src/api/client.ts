@@ -1146,6 +1146,9 @@ export type V1ArrearsPolicy = 'catch-up' | 'skip-missed';
 export interface V1CreateStreamParams {
   readonly streamId?: string;
   readonly appId?: string;
+  /** Caller's own reference, stamped verbatim onto every payout's on-chain
+   *  metadata (`cantonstreams.dev/external-ref`) for reconciliation. */
+  readonly externalRef?: string;
   /** Whitelisted asset key (GET /api/assets). Absent or 'cc' ⇒ Canton Coin. An
    *  unknown/unconfigured key is rejected by the proxy with `unknown_asset`. */
   readonly assetKey?: string;
@@ -1179,6 +1182,9 @@ export interface StreamInstrument {
 export interface V1Agreement {
   readonly agreementId: string;
   readonly appId?: string;
+  /** Caller-supplied external reference echoed back from the proxy (also stamped
+   *  on-chain as `cantonstreams.dev/external-ref`). Absent ⇒ none supplied. */
+  readonly externalRef?: string;
   readonly payerParty: string;
   readonly recipientParty: string;
   readonly ratePerPeriod: string;
@@ -1376,6 +1382,9 @@ export interface EscrowView {
   readonly escrowId: string;
   readonly originalPayer: string;
   readonly recipient: string;
+  /** Caller-supplied external reference echoed back from the proxy (also stamped
+   *  on-chain as `cantonstreams.dev/external-ref`). Absent ⇒ none supplied. */
+  readonly externalRef?: string;
   readonly ratePerCycle: string;
   readonly cadenceSeconds: number;
   readonly totalDeposited: string;
@@ -1408,6 +1417,9 @@ export interface CreateEscrowParams {
   readonly escrowId?: string;
   /** Defaults to the caller party; must equal it. */
   readonly payerParty?: string;
+  /** Caller's own reference, stamped verbatim onto every relayed release payout
+   *  (`cantonstreams.dev/external-ref`) for reconciliation. */
+  readonly externalRef?: string;
   readonly recipient: string;
   readonly ratePerCycle: string;
   readonly cadenceSeconds: number;

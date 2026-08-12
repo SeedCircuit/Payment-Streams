@@ -606,6 +606,20 @@ async function getStreamOrThrow(client: CantonStreamsClient, sender: string, str
 /**
  * Recursively convert Decimal instances to strings for JSON serialization.
  */
+/**
+ * Caller-supplied external reference for on-chain reconciliation. Read verbatim
+ * from the request body (`externalRef`, or the shorter `ref`) or the same query
+ * params (so `POST /api/v1/streams?ref=…` works for direct API callers too).
+ * Empty/absent ⇒ undefined, so no `cantonstreams.dev/external-ref` key is
+ * stamped. Never transformed — the servicing side matches it by exact equality.
+ */
+function readExternalRef(req: express.Request): string | undefined {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const query = (req.query ?? {}) as Record<string, unknown>;
+  const raw = body['externalRef'] ?? body['ref'] ?? query['externalRef'] ?? query['ref'];
+  return typeof raw === 'string' && raw !== '' ? raw : undefined;
+}
+
 function serializeForJson(obj: unknown): unknown {
   if (obj instanceof Decimal) return obj.toString();
   if (obj instanceof Date) return obj.toISOString();
@@ -1410,6 +1424,7 @@ app.post('/api/v1/streams', async (req, res) => {
     const input: CreateV1StreamInput = {
       streamId: (body['streamId'] as string | undefined) ?? (body['id'] as string | undefined),
       appId: body['appId'] as string | undefined,
+      ...(readExternalRef(req) ? { externalRef: readExternalRef(req) } : {}),
       payerParty,
       recipientParty: (body['recipientParty'] as string | undefined)
         ?? (body['recipient'] as string | undefined)
@@ -2410,6 +2425,7 @@ app.post('/api/v1/escrows', async (req, res) => {
       totalDeposit: String(body['totalDeposit'] ?? body['totalDeposited'] ?? ''),
       fundingTransferId: body['fundingTransferId'] as string | undefined,
       assetKey: typeof body['assetKey'] === 'string' ? (body['assetKey'] as string) : undefined,
+      ...(readExternalRef(req) ? { externalRef: readExternalRef(req) } : {}),
     });
     res.status(201).json(serializeForJson(created));
   } catch (err) {
