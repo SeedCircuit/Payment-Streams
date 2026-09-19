@@ -11,6 +11,18 @@ import {
   prepareDistributionRecipientAuthorization,
   prepareDistributionSettlement,
 } from '../dist/distribution.js';
+import { AuthError } from '../dist/auth.js';
+import { requireNonEmptyObject } from '../dist/validation.js';
+
+test('rejects an empty distribution request body as invalid input', () => {
+  assert.throws(
+    () => requireNonEmptyObject({}, 'request body'),
+    (error) =>
+      error instanceof AuthError &&
+      error.statusCode === 400 &&
+      error.reason === 'invalid_input',
+  );
+});
 
 test('uses stable V2 package-name references for factory interfaces', () => {
   assert.equal(

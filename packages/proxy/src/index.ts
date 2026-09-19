@@ -96,6 +96,7 @@ import {
   startTokenStandardAutoWithdrawWorker,
 } from './auto-withdraw.js';
 import {
+  requireNonEmptyObject,
   requireAmount,
   optionalAmount,
   requireNonNegativeAmount,
@@ -304,42 +305,7 @@ if (!RATE_LIMIT_DISABLED) {
 }
 
 /**
- * Authorize the request for the given action and create a CantonStreamsClient.
- *
- * Uses the auth module to validate the caller's party/token against the
- * configured allowlists and per-action authorization rules.
- *
- * @throws AuthError if authorization fails
- */
-async function createAuthorizedClient(
-  req: express.Request,
-  action: Action,
-  additionalParties: string[] = [],
-): Promise<CantonStreamsClient> {
-  const auth: AuthResult = await authorizeRequest(req, action, authConfig);
-
-  const config: ClientConfig = {
-    host: CANTON_HOST,
-    port: CANTON_PORT,
-    useTls: CANTON_USE_TLS,
-    allowInsecureToken: CANTON_ALLOW_INSECURE_TOKEN,
-    synchronizerId: CANTON_SYNCHRONIZER_ID,
-    token: auth.token,
-    actAs: [...new Set([...auth.actAs, ...additionalParties.filter(Boolean)])],
-  };
-
-  return new CantonStreamsClient(config);
-}
-
-/**
- * Same as {@link createAuthorizedClient}, but also returns the resolved
- * caller party so routes that need to enforce party-scoped invariants
- * (e.g. "only the policy sender can revoke") do not have to re-read
- * the X-Canton-Party header.
- *
- * The caller party comes from the JWT `party`/`sub` claim (auth mode)
- * or from the dev-mode JWT extraction in `authorizeRequest`. This is
- * the same identity the client is then authorized to actAs.
+ * Authorize a request and return both the ledger client and resolved caller.
  */
 async function createAuthorizedClientWithParty(
   req: express.Request,
@@ -2149,7 +2115,7 @@ app.get('/api/distributions/:contractId', async (req, res) => {
 app.post('/api/distributions', async (req, res) => {
   try {
     await authorizeRequest(req, 'finalize', authConfig);
-    const body = (req.body ?? {}) as Record<string, unknown>;
+    const body = requireNonEmptyObject(req.body, 'request body');
     const operator = requireDistributionOperator();
     const streamId = requireId(body['streamId'] ?? crypto.randomUUID(), 'streamId');
     const payerAccount = parseDistributionAccount(body['payerAccount'], 'payerAccount');
