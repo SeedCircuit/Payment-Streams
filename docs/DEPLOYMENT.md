@@ -34,45 +34,84 @@ docker compose -f docker/docker-compose.yml down -v
 
 ### 1. Daml packages
 
-**Build:**
+**Build for local development and CI:**
 
 ```bash
-pnpm daml:deps       # download Splice V2 dependency DARs into packages/daml/main/.lib/
-pnpm daml:build      # compile all Daml packages
+pnpm daml:deps
+pnpm daml:build
 ```
 
-Output: `packages/daml/main/.daml/dist/canton-streams-1.4.0.dar`.
+This source-build path is reproducible for the repository's isolated sandbox
+and tests. Do not upload its `canton-streams-1.4.0.dar` to TestNet or MainNet:
+the token-standard dependencies have different package ids from the official
+packages already vetted on those networks.
+
+**Build for TestNet or MainNet:**
+
+Copy the exact official Token Standard DARs from the validator release used by
+the target network into one directory. Obtain the already-vetted
+`canton-streams-interfaces-1.0.0.dar` from the participant when preserving its
+package id, then run:
+
+```bash
+pnpm daml:build:network -- \
+  --official-dir /path/to/target-validator/dars \
+  --interfaces-dar /path/to/vetted/canton-streams-interfaces-1.0.0.dar
+```
+
+The command checks the four direct official Token Standard dependencies,
+builds `canton-streams` against their exact package ids, and writes the
+deployable DAR plus a dependency manifest to `dist/network/`. If the Streams
+interfaces package has never been vetted on that participant, omit
+`--interfaces-dar`; the command builds it and it must be uploaded and vetted
+with the main package.
+
+Do not use a DAR from the `canton-streams-source-built-test-dars` CI artifact
+for network deployment. Selectively vetting the source-built DAR cannot make it
+compatible because vetting does not rewrite dependency package ids embedded in
+DALF files.
 
 **Upload to a participant:**
 
 ```bash
 # Via Canton Admin API (gRPC)
-grpcurl -plaintext \
-  -d "{\"dar_file\": \"$(base64 -i packages/daml/main/.daml/dist/canton-streams-1.4.0.dar)\"}" \
-  localhost:5002 \
-  com.digitalasset.canton.admin.participant.v30.PackageService/UploadDar
+DAR=dist/network/canton-streams-1.4.0-<package-id-prefix>.dar
+B64=$(base64 < "$DAR" | tr -d '\n')
+printf '{"dars":[{"bytes":"%s"}],"vet_all_packages":false,"synchronize_vetting":true}' "$B64" > /tmp/streams-upload.json
+grpcurl -plaintext -max-msg-sz 104857600 \
+  -d @ localhost:5002 \
+  com.digitalasset.canton.admin.participant.v30.PackageService/UploadDar \
+  < /tmp/streams-upload.json
 
 # Or via the daml CLI
 daml ledger upload-dar \
   --host localhost --port 5001 \
-  packages/daml/main/.daml/dist/canton-streams-1.4.0.dar
+  dist/network/canton-streams-1.4.0-<package-id-prefix>.dar
 ```
 
 **Vet the package on the synchronizer:**
 
-Upload alone is not enough — the participant must also vet the package on the synchronizer where streams are created. Otherwise submissions fail with `UNKNOWN_PACKAGE` even though the DAR is on disk.
+Upload alone is not enough: the participant must also vet the new Streams
+package on the synchronizer where streams are created. The official token
+packages are already vetted and should not be re-vetted as alternate builds.
+Otherwise submissions fail with `UNKNOWN_PACKAGE` even though the DAR is on
+disk.
 
 Via the Canton console:
 
 ```scala
 participant.topology.vetted_packages.propose_delta(
   participant.id,
-  adds = packages,    // your canton-streams package + its transitive deps
+  adds = Seq(streamsPackage),
   store = SYNCHRONIZER_ID,
   mustFullyAuthorize = true,
   forceFlags = ForceFlags.all,
 )
 ```
+
+Also add the interfaces package only when it is not already vetted. Compare the
+package ids in the generated `.dar.json` manifest with the participant's vetted
+package set before changing topology.
 
 After upload + vet, capture the new package id:
 

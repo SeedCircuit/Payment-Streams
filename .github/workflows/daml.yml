@@ -22,6 +22,7 @@ on:
     paths:
       - 'packages/daml/**'
       - 'scripts/fetch-v2-dars.mjs'
+      - 'scripts/build-network-dar.mjs'
       - 'scripts/v2-dar-pins.json'
       - 'scripts/test-all-daml.sh'
       - '.github/workflows/daml.yml'
@@ -30,6 +31,7 @@ on:
     paths:
       - 'packages/daml/**'
       - 'scripts/fetch-v2-dars.mjs'
+      - 'scripts/build-network-dar.mjs'
       - 'scripts/v2-dar-pins.json'
       - 'scripts/test-all-daml.sh'
       - '.github/workflows/daml.yml'
@@ -111,7 +113,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: canton-streams-dars
+          name: canton-streams-source-built-test-dars
           path: packages/daml/**/.daml/dist/*.dar
           if-no-files-found: warn
           retention-days: 14

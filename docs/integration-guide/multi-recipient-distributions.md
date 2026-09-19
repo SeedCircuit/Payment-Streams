@@ -89,11 +89,13 @@ that require explicit package ids. `DISTRIBUTION_REGISTRY_TOKEN` is also
 optional and should remain unset for a public registry such as CC Scan. Set it
 only when the selected asset registry requires bearer authentication.
 
-The participant hosting the operator must upload and vet
-`packages/daml/main/.daml/dist/canton-streams-1.4.0.dar`. Its main package id is
-`417674c4a46e9e4c8e1dea526174e71fca3284c0aefb453ae3730876972dd292`.
-The payer and destination participants do not need the Streams DAR because
-their wallets exercise only standard V2 token interfaces.
+The participant hosting the operator must upload and vet a `canton-streams`
+1.4.0 DAR built against the exact official Token Standard DARs used by the
+target network. Follow the network-build procedure in
+[Deployment Guide](../DEPLOYMENT.md#1-daml-packages); the package id is produced
+by that build and must not be copied from a source-built local artifact. The
+payer and destination participants do not need the Streams DAR because their
+wallets exercise only standard V2 token interfaces.
 
 ## Create A Distribution
 

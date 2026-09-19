@@ -37,6 +37,11 @@ pnpm daml:build     # compile all Daml packages
 pnpm daml:test      # run Daml scenario tests
 ```
 
+This source-built dependency path is for development and CI. A TestNet or
+MainNet release DAR must be produced with `pnpm daml:build:network` against the
+exact official Token Standard DARs from the target validator release; see the
+[Deployment Guide](DEPLOYMENT.md#1-daml-packages).
+
 **Note on Daml CI:** the canton-streams DAR depends on CIP-56 V2 Token
 Standard packages from `canton-network/splice`.
 Building those requires cloning the upstream Splice repo and running
