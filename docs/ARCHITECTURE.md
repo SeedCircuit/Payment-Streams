@@ -186,6 +186,24 @@ The same SDK call shape works for CC, USDCx, and any future CIP-56 asset. Adopte
 
 `StreamFlow` is the same shape with iterated allocations and sender-side `TopUp` between iterations. `MilestoneAdmin` is a single multi-leg `AllocationSpec` where each leg is gated on a `ConfirmMilestone` from the admin party.
 
+## Data flow: multi-recipient distribution
+
+```text
+1. Integrating backend creates an operator-only DistributionStreamRecord
+2. Payer wallet signs AllocationFactory_Allocate for every SenderSide leg
+3. Each destination wallet signs a no-funds ReceiverSide allocation
+4. Operator verifies all allocations, records them, and activates the schedule
+5. For each complete period, operator submits SettlementFactory_SettleBatch
+6. Token Standard settles every destination atomically and rolls all allocations
+7. Operator reconciles the confirmed update and every replacement allocation cid
+```
+
+The record is an index, not custody. Only the operator participant needs the
+Streams DAR; payer and recipient participants interact through standard V2
+token contracts. See
+[multi-recipient-distributions.md](integration-guide/multi-recipient-distributions.md)
+for the API and wallet sequence.
+
 ## Trust boundary
 
 | Component | Trust | Why |
@@ -211,6 +229,6 @@ Templates live next to the gitignored counterparts (`config/local.testnet.exampl
 
 ## Versioning
 
-- npm packages use `1.0.0`; the main Daml DAR carries its own numeric version, currently `1.3.0` (bumped from `1.2.0` to add `OperatorEscrow`).
+- npm packages use `1.0.0`; the main Daml DAR carries its own numeric version, currently `1.4.0` (adding `DistributionStreamRecord`; `1.3.0` added `OperatorEscrow`).
 - DAR filenames are `canton-streams-<version>.dar`.
 - See [RELEASING.md](../RELEASING.md) for the tag-driven npm release process.

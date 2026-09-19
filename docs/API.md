@@ -251,6 +251,29 @@ Mutual cancel. Requires both sender and recipient to have submitted matching req
 
 Renew a `RenewableTerm` stream for the next period.
 
+## Multi-Recipient Distributions
+
+Distribution records are operator-hosted, non-custodial indexes for V2
+allocations that pay multiple destinations atomically.
+
+| Method | Endpoint | Caller | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/distributions` | Participant | List records where the caller is payer or recipient. |
+| `GET` | `/api/distributions/:contractId` | Participant | Read one participant-scoped record. |
+| `POST` | `/api/distributions` | Service | Create a generic percentage or fixed-amount split. |
+| `POST` | `/api/distributions/:contractId/prepare-funding` | Payer | Prepare a standard `AllocationFactory_Allocate` wallet command after the prior chain is exhausted. |
+| `POST` | `/api/distributions/:contractId/record-funding` | Service | Record a verified allocation and committed amount. |
+| `POST` | `/api/distributions/:contractId/prepare-recipient-authorization` | Recipient | Prepare a no-funds `ReceiverSide` allocation for one configured account. |
+| `POST` | `/api/distributions/:contractId/record-recipient-authorization` | Service | Record a verified recipient allocation. |
+| `POST` | `/api/distributions/:contractId/activate` | Service | Activate after funding and recipient authorization checks. |
+| `POST` | `/api/distributions/:contractId/prepare-settlement` | Service | Prepare one due `SettlementFactory_SettleBatch` command. |
+| `POST` | `/api/distributions/:contractId/record-settlement` | Service | Reconcile a confirmed settlement update and replacement allocation. |
+| `POST` | `/api/distributions/:contractId/state` | Service | Pause, resume, complete, or cancel the record. |
+
+See [Multi-Recipient Distribution Streams](integration-guide/multi-recipient-distributions.md)
+for request examples, custody boundaries, deployment variables, and the full
+wallet-to-settlement sequence.
+
 ## Pending requests (inbox)
 
 ### `GET /api/stream-requests`

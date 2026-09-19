@@ -45,6 +45,22 @@ export type {
   StreamUpdate,
 } from './types/stream.js';
 export type { RetryOptions } from './transport/retry.js';
+export type {
+  DistributionRule,
+  DistributionLeg,
+  DistributionSettlementLeg,
+  DistributionRecipientAuthorization,
+  DistributionFundingMode,
+  DistributionStatus,
+  CreateDistributionParams,
+  BuildDistributionAllocationRequestParams,
+  BuildDistributionAllocationFactoryParams,
+  DistributionAllocationFactoryPlan,
+  BuildDistributionRecipientAllocationFactoryParams,
+  DistributionRecipientAllocationFactoryPlan,
+  BuildDistributionSettlementFactoryParams,
+  DistributionSettlementFactoryPlan,
+} from './commands/distribution.js';
 
 // Runtime value exports (all browser-safe — no Node.js deps)
 export { VestingMode, StreamStatus, AssetType, SettlementMode } from './types/stream.js';

@@ -785,6 +785,46 @@ export class CantonStreamsApi {
     }
   }
 
+  async listDistributions(filter?: {
+    streamId?: string;
+    status?: DistributionStatus;
+  }): Promise<DistributionRecord[]> {
+    const params = new URLSearchParams();
+    if (filter?.streamId) params.set('streamId', filter.streamId);
+    if (filter?.status) params.set('status', filter.status);
+    const qs = params.toString();
+    return this.request<DistributionRecord[]>('GET', `/api/distributions${qs ? `?${qs}` : ''}`);
+  }
+
+  async getDistribution(contractId: string): Promise<DistributionRecord> {
+    return this.request<DistributionRecord>(
+      'GET',
+      `/api/distributions/${encodeURIComponent(contractId)}`,
+    );
+  }
+
+  async prepareDistributionFunding(
+    contractId: string,
+    params: PrepareDistributionFundingParams,
+  ): Promise<PreparedDistributionFunding> {
+    return this.request<PreparedDistributionFunding>(
+      'POST',
+      `/api/distributions/${encodeURIComponent(contractId)}/prepare-funding`,
+      params,
+    );
+  }
+
+  async prepareDistributionRecipientAuthorization(
+    contractId: string,
+    params: PrepareDistributionRecipientAuthorizationParams,
+  ): Promise<PreparedDistributionRecipientAuthorization> {
+    return this.request<PreparedDistributionRecipientAuthorization>(
+      'POST',
+      `/api/distributions/${encodeURIComponent(contractId)}/prepare-recipient-authorization`,
+      params,
+    );
+  }
+
   // --- Open-ended Flows (StreamFlow, non-prefunded / rolling top-up) ---
 
   async listFlows(filter?: { sender?: string; recipient?: string }): Promise<RawFlow[]> {
@@ -1376,6 +1416,98 @@ export interface EscrowReconciliation {
     readonly status: EscrowOfferStatus;
   }>;
   readonly checks: ReadonlyArray<{ readonly name: string; readonly ok: boolean; readonly detail: string }>;
+}
+
+export type DistributionStatus =
+  | 'AwaitingFunding'
+  | 'AwaitingRecipients'
+  | 'DistributionActive'
+  | 'DistributionPaused'
+  | 'DistributionCompleted'
+  | 'DistributionCancelled';
+
+export type DistributionRule =
+  | { readonly type: 'percentage'; readonly basisPoints: number }
+  | { readonly type: 'fixed'; readonly amountPerPeriod: string };
+
+export interface DistributionAccount {
+  readonly owner: string;
+  readonly provider?: string;
+  readonly id: string;
+}
+
+export interface DistributionLeg {
+  readonly legId: string;
+  readonly receiver: DistributionAccount;
+  readonly rule: DistributionRule;
+}
+
+export interface DistributionRecipientAuthorization {
+  readonly receiver: DistributionAccount;
+  readonly authorizationId: string;
+  readonly allocationCid: string;
+}
+
+export interface DistributionRecord {
+  readonly contractId: string;
+  readonly streamId: string;
+  readonly operator: string;
+  readonly payerAccount: DistributionAccount;
+  readonly instrumentId: { readonly admin: string; readonly id: string };
+  readonly grossAmountPerPeriod: string;
+  readonly periodSeconds: number;
+  readonly startTime: string;
+  readonly endTime?: string;
+  readonly legs: readonly DistributionLeg[];
+  readonly fundingMode: 'MandateFunding' | 'PerCycleFunding' | 'EscrowFunding';
+  readonly totalFunded: string;
+  readonly totalGrossSettled: string;
+  readonly fundingCount: number;
+  readonly settlementCount: number;
+  readonly currentAllocationCid?: string;
+  readonly originalAllocationId?: string;
+  readonly lastFundingId?: string;
+  readonly lastSettlementId?: string;
+  readonly fundingIds: readonly string[];
+  readonly settlementIds: readonly string[];
+  readonly recipientAuthorizations: readonly DistributionRecipientAuthorization[];
+  readonly recipientAuthorizationIds: readonly string[];
+  readonly currentSettlementDeadline?: string;
+  readonly status: DistributionStatus;
+}
+
+export interface PrepareDistributionFundingParams {
+  readonly grossAmount?: string;
+  readonly fundingId?: string;
+  readonly requestedAt?: string;
+  readonly settlementDeadline: string;
+  readonly inputHoldingCids: readonly string[];
+  readonly nextIterationFunding?: Readonly<Record<string, string>>;
+}
+
+export interface PreparedDistributionFunding {
+  readonly factoryId: string;
+  readonly command: Record<string, unknown>;
+  readonly disclosedContracts: ReadonlyArray<Record<string, unknown>>;
+  readonly settlementLegs: ReadonlyArray<{ readonly legId: string; readonly amount: string }>;
+  readonly fundingId: string;
+  readonly grossAmount: string;
+  readonly committedAmount: string;
+}
+
+export interface PrepareDistributionRecipientAuthorizationParams {
+  readonly receiverAccount: DistributionAccount;
+  readonly authorizationId?: string;
+  readonly requestedAt?: string;
+}
+
+export interface PreparedDistributionRecipientAuthorization {
+  readonly factoryId: string;
+  readonly command: Record<string, unknown>;
+  readonly disclosedContracts: ReadonlyArray<Record<string, unknown>>;
+  readonly settlementLegs: ReadonlyArray<{ readonly legId: string; readonly amount: string }>;
+  readonly authorizationId: string;
+  readonly receiverAccount: DistributionAccount;
 }
 
 export interface EscrowView {

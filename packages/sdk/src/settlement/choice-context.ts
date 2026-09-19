@@ -64,6 +64,7 @@ export interface AllocationFactoryRequest {
    */
   readonly choiceArguments: Readonly<Record<string, unknown>>;
   readonly excludeDebugFields?: boolean;
+  readonly version?: 'v1' | 'v2';
 }
 
 export interface AllocationFactoryResult {
@@ -72,6 +73,13 @@ export interface AllocationFactoryResult {
   /** Context + disclosures for the `AllocationFactory_Allocate` exercise. */
   readonly choiceContext: ChoiceContextV1;
 }
+
+export interface SettlementFactoryRequest {
+  readonly choiceArguments: Readonly<Record<string, unknown>>;
+  readonly excludeDebugFields?: boolean;
+}
+
+export type SettlementFactoryResult = AllocationFactoryResult;
 
 // ---------------------------------------------------------------------------
 // Wire-shape mapping
@@ -223,7 +231,7 @@ export async function fetchAllocationFactory(
   opts?: { readonly token?: string; readonly headers?: Readonly<Record<string, string>> },
 ): Promise<AllocationFactoryResult> {
   const base = registryApiUrl.replace(/\/$/, '');
-  const url = `${base}/registry/allocation-instruction/v1/allocation-factory`;
+  const url = `${base}/registry/allocation-instruction/${request.version ?? 'v1'}/allocation-factory`;
   const response = await postJson(
     url,
     {
@@ -236,6 +244,33 @@ export async function fetchAllocationFactory(
   const factoryId = (response['factoryId'] ?? response['factory_id']) as string | undefined;
   if (!factoryId) {
     throw new Error('Registry allocation-factory response missing factoryId');
+  }
+  const contextBody = (response['choiceContext'] ?? response['choice_context'] ?? {}) as
+    Record<string, unknown>;
+  return {
+    factoryId,
+    choiceContext: mapChoiceContext(contextBody),
+  };
+}
+
+export async function fetchSettlementFactory(
+  registryApiUrl: string,
+  request: SettlementFactoryRequest,
+  opts?: { readonly token?: string; readonly headers?: Readonly<Record<string, string>> },
+): Promise<SettlementFactoryResult> {
+  const base = registryApiUrl.replace(/\/$/, '');
+  const response = await postJson(
+    `${base}/registry/allocation/v2/settlement-factory`,
+    {
+      choiceArguments: request.choiceArguments,
+      excludeDebugFields: request.excludeDebugFields ?? true,
+    },
+    opts?.token,
+    opts?.headers,
+  );
+  const factoryId = (response['factoryId'] ?? response['factory_id']) as string | undefined;
+  if (!factoryId) {
+    throw new Error('Registry settlement-factory response missing factoryId');
   }
   const contextBody = (response['choiceContext'] ?? response['choice_context'] ?? {}) as
     Record<string, unknown>;

@@ -51,6 +51,7 @@ import {
   createDefaultOrchestrator,
   createLogger,
   TEMPLATE_TOKEN_STANDARD_ACCEPTED_REQUEST,
+  validateDistribution,
 } from '@canton-streams/sdk';
 import type {
   ClientConfig,
@@ -60,6 +61,10 @@ import type {
   CreateFlowParams,
   FlowFilter,
   RenewParams,
+  DistributionLeg,
+  AccountV2,
+  InstrumentIdV2,
+  DistributionFundingMode,
 } from '@canton-streams/sdk';
 import { AssetType, VestingMode, SettlementMode } from '@canton-streams/sdk';
 
@@ -132,6 +137,20 @@ import {
   startEscrowSolvencyMonitor,
   ensureEscrowPreapproval,
 } from './escrow.js';
+import {
+  activateDistributionViaJson,
+  calculateDistributionAccruedGross,
+  changeDistributionStateViaJson,
+  createDistributionViaJson,
+  listDistributionsViaJson,
+  prepareDistributionFunding,
+  prepareDistributionRecipientAuthorization,
+  prepareDistributionSettlement,
+  recordDistributionFundingViaJson,
+  recordDistributionRecipientAuthorizationViaJson,
+  recordDistributionSettlementViaJson,
+  type DistributionRecordView,
+} from './distribution.js';
 
 // ---------------------------------------------------------------------------
 // Configuration from environment
@@ -157,6 +176,18 @@ const authConfig: AuthConfig = parseAuthConfig();
 // Fail closed at boot: refuse to start with a spoofable dev-auth
 // posture unless it is explicitly acknowledged AND loopback-bound.
 assertAuthConfigSafe(authConfig);
+
+const DISTRIBUTION_OPERATOR =
+  process.env['PROXY_DISTRIBUTION_OPERATOR']?.trim() || authConfig.escrowOperator || '';
+const DISTRIBUTION_REGISTRY_API_URL = (
+  process.env['DISTRIBUTION_REGISTRY_API_URL'] ??
+  process.env['REGISTRY_API_URL'] ??
+  ''
+).replace(/\/+$/, '');
+const DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID =
+  process.env['V2_ALLOCATION_FACTORY_INTERFACE_ID']?.trim() ?? '';
+const DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID =
+  process.env['V2_SETTLEMENT_FACTORY_INTERFACE_ID']?.trim() ?? '';
 
 /**
  * V1 transfer-instruction lane service — ports the proven settle/create logic
@@ -337,6 +368,7 @@ const OPERATOR_READERS: Set<string> = new Set(
     ...(process.env['PROXY_SERVICE_PARTIES']?.split(',') ?? []),
     ...(process.env['PROXY_OPERATOR_READERS']?.split(',') ?? []),
     process.env['PROXY_ESCROW_OPERATOR'] ?? '',
+    DISTRIBUTION_OPERATOR,
   ]
     .map((p) => p.trim())
     .filter(Boolean),
@@ -710,6 +742,210 @@ function parseRenewParams(body: Record<string, unknown>): RenewParams {
       'confirmedAdditionalAmount',
     ),
   };
+}
+
+function requireDate(value: unknown, field: string): Date {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new AuthError(400, 'invalid_input', `Invalid ${field}: expected an ISO-8601 timestamp`);
+  }
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    throw new AuthError(400, 'invalid_input', `Invalid ${field}: expected an ISO-8601 timestamp`);
+  }
+  return date;
+}
+
+function optionalDate(value: unknown, field: string): Date | undefined {
+  return value === undefined || value === null ? undefined : requireDate(value, field);
+}
+
+function parseDistributionLegs(value: unknown): DistributionLeg[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new AuthError(400, 'invalid_input', 'Invalid legs: expected at least one destination');
+  }
+  return value.map((raw, index) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new AuthError(400, 'invalid_input', `Invalid legs[${index}]: expected an object`);
+    }
+    const leg = raw as Record<string, unknown>;
+    const receiverRaw = leg['receiver'];
+    const ruleRaw = leg['rule'];
+    if (!receiverRaw || typeof receiverRaw !== 'object' || Array.isArray(receiverRaw)) {
+      throw new AuthError(400, 'invalid_input', `Invalid legs[${index}].receiver`);
+    }
+    if (!ruleRaw || typeof ruleRaw !== 'object' || Array.isArray(ruleRaw)) {
+      throw new AuthError(400, 'invalid_input', `Invalid legs[${index}].rule`);
+    }
+    const receiver = receiverRaw as Record<string, unknown>;
+    const rule = ruleRaw as Record<string, unknown>;
+    const accountId = receiver['id'];
+    if (accountId !== undefined && typeof accountId !== 'string') {
+      throw new AuthError(400, 'invalid_input', `Invalid legs[${index}].receiver.id`);
+    }
+    const parsedRule: DistributionLeg['rule'] =
+      rule['type'] === 'percentage'
+        ? {
+            type: 'percentage',
+            basisPoints: Number(rule['basisPoints']),
+          }
+        : rule['type'] === 'fixed'
+          ? {
+              type: 'fixed',
+              amountPerPeriod: requireAmount(
+                rule['amountPerPeriod'],
+                `legs[${index}].rule.amountPerPeriod`,
+              ),
+            }
+          : (() => {
+              throw new AuthError(
+                400,
+                'invalid_input',
+                `Invalid legs[${index}].rule.type: expected percentage or fixed`,
+              );
+            })();
+    if (
+      parsedRule.type === 'percentage' &&
+      (!Number.isSafeInteger(parsedRule.basisPoints) || parsedRule.basisPoints <= 0)
+    ) {
+      throw new AuthError(
+        400,
+        'invalid_input',
+        `Invalid legs[${index}].rule.basisPoints: expected a positive integer`,
+      );
+    }
+    return {
+      legId: requireId(leg['legId'], `legs[${index}].legId`),
+      receiver: {
+        owner: requirePartyId(receiver['owner'], `legs[${index}].receiver.owner`),
+        provider: optionalPartyId(receiver['provider'], `legs[${index}].receiver.provider`),
+        id: accountId ?? '',
+      },
+      rule: parsedRule,
+    };
+  });
+}
+
+function parseDistributionAccount(
+  value: unknown,
+  field: string,
+): AccountV2 & { readonly owner: string } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AuthError(400, 'invalid_input', `Invalid ${field}: expected an account object`);
+  }
+  const account = value as Record<string, unknown>;
+  const id = account['id'];
+  if (id !== undefined && typeof id !== 'string') {
+    throw new AuthError(400, 'invalid_input', `Invalid ${field}.id: expected text`);
+  }
+  return {
+    owner: requirePartyId(account['owner'], `${field}.owner`),
+    provider: optionalPartyId(account['provider'], `${field}.provider`),
+    id: id ?? '',
+  };
+}
+
+function parseInstrumentId(value: unknown): InstrumentIdV2 {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AuthError(400, 'invalid_input', 'Invalid instrumentId: expected an object');
+  }
+  const instrument = value as Record<string, unknown>;
+  return {
+    admin: requirePartyId(instrument['admin'], 'instrumentId.admin'),
+    id: requireId(instrument['id'], 'instrumentId.id'),
+  };
+}
+
+function parseFundingMode(value: unknown): DistributionFundingMode {
+  const mode = value ?? 'EscrowFunding';
+  if (mode !== 'MandateFunding' && mode !== 'PerCycleFunding' && mode !== 'EscrowFunding') {
+    throw new AuthError(400, 'invalid_input', 'Invalid fundingMode');
+  }
+  return mode;
+}
+
+function parseAmountMap(value: unknown, field: string): Record<string, Decimal> | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new AuthError(400, 'invalid_input', `Invalid ${field}: expected an amount map`);
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, amount]) => [
+      requireId(key, `${field} key`),
+      requireNonNegativeAmount(amount, `${field}.${key}`),
+    ]),
+  );
+}
+
+function validateDistributionInput(
+  grossAmountPerPeriod: Decimal.Value,
+  legs: ReadonlyArray<DistributionLeg>,
+): void {
+  try {
+    validateDistribution(grossAmountPerPeriod, legs);
+  } catch (err) {
+    throw new AuthError(
+      400,
+      'invalid_distribution',
+      err instanceof Error ? err.message : 'Invalid distribution configuration',
+    );
+  }
+}
+
+function requireDistributionOperator(): string {
+  if (!DISTRIBUTION_OPERATOR) {
+    throw new AuthError(
+      503,
+      'distribution_operator_not_configured',
+      'Distribution streams require PROXY_DISTRIBUTION_OPERATOR or PROXY_ESCROW_OPERATOR',
+    );
+  }
+  try {
+    return requirePartyId(DISTRIBUTION_OPERATOR, 'PROXY_DISTRIBUTION_OPERATOR');
+  } catch {
+    throw new AuthError(
+      503,
+      'distribution_operator_invalid',
+      'The configured distribution operator is not a valid Canton party id',
+    );
+  }
+}
+
+async function getDistributionOrThrow(contractId: string): Promise<DistributionRecordView> {
+  const records = await listDistributionsViaJson(requireDistributionOperator());
+  const record = records.find((candidate) => candidate.contractId === contractId);
+  if (!record) {
+    throw new AuthError(404, 'distribution_not_found', 'Distribution stream not found');
+  }
+  return record;
+}
+
+function canReadDistribution(caller: string, record: DistributionRecordView): boolean {
+  return (
+    OPERATOR_READERS.has(caller) ||
+    record.payerAccount.owner === caller ||
+    record.legs.some((leg) => leg.receiver.owner === caller)
+  );
+}
+
+function sameDistributionAccount(left: AccountV2, right: AccountV2): boolean {
+  return (
+    left.owner === right.owner &&
+    (left.provider ?? undefined) === (right.provider ?? undefined) &&
+    left.id === right.id
+  );
+}
+
+function configuredDistributionReceiverAccounts(
+  record: DistributionRecordView,
+): Array<AccountV2 & { readonly owner: string }> {
+  const accounts: Array<AccountV2 & { readonly owner: string }> = [];
+  for (const leg of record.legs) {
+    const receiver = leg.receiver as AccountV2 & { readonly owner: string };
+    if (!accounts.some((account) => sameDistributionAccount(account, receiver))) {
+      accounts.push(receiver);
+    }
+  }
+  return accounts;
 }
 
 // ---------------------------------------------------------------------------
@@ -1876,6 +2112,614 @@ app.post('/api/v1/streams/:id/record-withdraw', async (req, res) => {
     res.json(serializeForJson(result));
   } catch (err) {
     handleError(res, err, 'recordWithdrawV1Stream');
+  }
+});
+
+app.get('/api/distributions', async (req, res) => {
+  try {
+    const auth = await authorizeRequest(req, 'query', authConfig);
+    let records = await listDistributionsViaJson(requireDistributionOperator());
+    if (!OPERATOR_READERS.has(auth.party)) {
+      records = records.filter((record) => canReadDistribution(auth.party, record));
+    }
+    const streamId = req.query['streamId'];
+    const status = req.query['status'];
+    if (typeof streamId === 'string') {
+      records = records.filter((record) => record.streamId === streamId);
+    }
+    if (typeof status === 'string') {
+      records = records.filter((record) => record.status === status);
+    }
+    res.json(serializeForJson(records));
+  } catch (err) {
+    handleError(res, err, 'listDistributions');
+  }
+});
+
+app.get('/api/distributions/:contractId', async (req, res) => {
+  try {
+    const auth = await authorizeRequest(req, 'query', authConfig);
+    const record = await getDistributionOrThrow(requireId(req.params['contractId'], 'contractId'));
+    if (!canReadDistribution(auth.party, record)) {
+      throw new AuthError(403, 'read_scope_violation', 'You are not a participant in this distribution');
+    }
+    res.json(serializeForJson(record));
+  } catch (err) {
+    handleError(res, err, 'getDistribution');
+  }
+});
+
+app.post('/api/distributions', async (req, res) => {
+  try {
+    await authorizeRequest(req, 'finalize', authConfig);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const operator = requireDistributionOperator();
+    const streamId = requireId(body['streamId'] ?? crypto.randomUUID(), 'streamId');
+    const payerAccount = parseDistributionAccount(body['payerAccount'], 'payerAccount');
+    const grossAmountPerPeriod = requireAmount(
+      body['grossAmountPerPeriod'],
+      'grossAmountPerPeriod',
+    );
+    const legs = parseDistributionLegs(body['legs']);
+    validateDistributionInput(grossAmountPerPeriod, legs);
+    const periodSeconds = Number(body['periodSeconds']);
+    if (!Number.isSafeInteger(periodSeconds) || periodSeconds <= 0) {
+      throw new AuthError(400, 'invalid_input', 'Invalid periodSeconds: expected a positive integer');
+    }
+    const startTime = requireDate(body['startTime'], 'startTime');
+    const endTime = optionalDate(body['endTime'], 'endTime');
+    if (endTime && endTime <= startTime) {
+      throw new AuthError(400, 'invalid_input', 'Invalid endTime: must be after startTime');
+    }
+    const result = await createDistributionViaJson({
+      streamId,
+      operator,
+      payerAccount,
+      instrumentId: parseInstrumentId(body['instrumentId']),
+      grossAmountPerPeriod,
+      periodSeconds,
+      startTime,
+      endTime,
+      legs,
+      fundingMode: parseFundingMode(body['fundingMode']),
+      observers: [],
+    });
+    res.status(201).json({ ...result, streamId });
+  } catch (err) {
+    handleError(res, err, 'createDistribution');
+  }
+});
+
+app.post('/api/distributions/:contractId/prepare-funding', async (req, res) => {
+  try {
+    const auth = await authorizeRequest(req, 'top-up', authConfig);
+    const contractId = requireId(req.params['contractId'], 'contractId');
+    const record = await getDistributionOrThrow(contractId);
+    enforceRole(auth.party, getRequiredRole('top-up'), record.payerAccount.owner);
+    const fundedOutstanding = new Decimal(record.totalFunded).minus(record.totalGrossSettled);
+    if (record.currentAllocationCid || !fundedOutstanding.eq(0)) {
+      throw new AuthError(
+        409,
+        'distribution_already_funded',
+        'The current allocation runway must be exhausted before another allocation is funded',
+      );
+    }
+    if (!DISTRIBUTION_REGISTRY_API_URL || !DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID) {
+      throw new AuthError(
+        503,
+        'distribution_registry_not_configured',
+        'Distribution funding requires DISTRIBUTION_REGISTRY_API_URL and V2_ALLOCATION_FACTORY_INTERFACE_ID',
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const inputHoldingCidsRaw = body['inputHoldingCids'];
+    if (!Array.isArray(inputHoldingCidsRaw) || inputHoldingCidsRaw.length === 0) {
+      throw new AuthError(
+        400,
+        'invalid_input',
+        'Invalid inputHoldingCids: expected at least one holding contract id',
+      );
+    }
+    const inputHoldingCids = inputHoldingCidsRaw.map((cid, index) =>
+      requireId(cid, `inputHoldingCids[${index}]`),
+    );
+    const grossAmount = requireAmount(
+      body['grossAmount'] ?? record.grossAmountPerPeriod,
+      'grossAmount',
+    );
+    const periodAmount = new Decimal(record.grossAmountPerPeriod);
+    if (!grossAmount.eq(periodAmount)) {
+      throw new AuthError(
+        400,
+        'invalid_distribution_funding',
+        'grossAmount must equal one configured distribution period; use nextIterationFunding for additional runway',
+      );
+    }
+    validateDistributionInput(record.grossAmountPerPeriod, record.legs);
+    const requestedAt = optionalDate(body['requestedAt'], 'requestedAt') ?? new Date();
+    const settlementDeadline = requireDate(body['settlementDeadline'], 'settlementDeadline');
+    if (settlementDeadline <= requestedAt) {
+      throw new AuthError(
+        400,
+        'invalid_input',
+        'Invalid settlementDeadline: must be after requestedAt',
+      );
+    }
+    const fundingId = requireId(
+      body['fundingId'] ?? `${record.streamId}:funding:${record.fundingCount + 1}`,
+      'fundingId',
+    );
+    const nextIterationFunding = parseAmountMap(
+      body['nextIterationFunding'],
+      'nextIterationFunding',
+    );
+    let reservedAmount = new Decimal(0);
+    if (nextIterationFunding) {
+      const entries = Object.entries(nextIterationFunding);
+      if (entries.length !== 1 || entries[0]![0] !== record.instrumentId.id) {
+        throw new AuthError(
+          400,
+          'invalid_distribution_funding',
+          `nextIterationFunding must contain only ${record.instrumentId.id}`,
+        );
+      }
+      if (!entries[0]![1].mod(periodAmount).eq(0)) {
+        throw new AuthError(
+          400,
+          'invalid_distribution_funding',
+          'nextIterationFunding must contain a whole number of configured periods',
+        );
+      }
+      reservedAmount = entries[0]![1];
+    }
+    const committedAmount = periodAmount.plus(reservedAmount);
+    if (record.endTime) {
+      const scheduledPeriods = Math.floor(
+        (new Date(record.endTime).getTime() - new Date(record.startTime).getTime()) /
+          (record.periodSeconds * 1000),
+      );
+      const maximumScheduledGross = periodAmount.times(scheduledPeriods);
+      if (new Decimal(record.totalFunded).plus(committedAmount).gt(maximumScheduledGross)) {
+        throw new AuthError(
+          400,
+          'invalid_distribution_funding',
+          'Funding commitment exceeds the distribution schedule',
+        );
+      }
+    }
+    const cumulativeFundedPeriods = new Decimal(record.totalFunded)
+      .plus(committedAmount)
+      .div(periodAmount)
+      .toDecimalPlaces(0, Decimal.ROUND_CEIL)
+      .toNumber();
+    const lastFundedDueAt = new Date(
+      new Date(record.startTime).getTime() +
+        cumulativeFundedPeriods * record.periodSeconds * 1000,
+    );
+    if (lastFundedDueAt > requestedAt && settlementDeadline < lastFundedDueAt) {
+      throw new AuthError(
+        400,
+        'invalid_distribution_funding',
+        `settlementDeadline must cover the funded runway through ${lastFundedDueAt.toISOString()}`,
+      );
+    }
+    const prepared = await prepareDistributionFunding({
+      sender: auth.party,
+      payerAccount: record.payerAccount,
+      instrumentId: record.instrumentId,
+      grossAmount,
+      grossAmountPerPeriod: record.grossAmountPerPeriod,
+      legs: record.legs,
+      settlement: {
+        executors: [record.operator],
+        executor: record.operator,
+        settlementRefId: fundingId,
+        requestedAt,
+        settleBefore: settlementDeadline,
+        meta: {
+          'cantonstreams.dev/stream-id': record.streamId,
+          'cantonstreams.dev/distribution-record': record.contractId,
+        },
+      },
+      settlementDeadline,
+      requestedAt,
+      inputHoldingCids,
+      nextIterationFunding,
+      registryApiUrl: DISTRIBUTION_REGISTRY_API_URL,
+      allocationFactoryInterfaceId: DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID,
+      registryToken: process.env['DISTRIBUTION_REGISTRY_TOKEN'],
+      meta: {
+        'cantonstreams.dev/stream-id': record.streamId,
+        'cantonstreams.dev/funding-id': fundingId,
+      },
+    });
+    res.json(serializeForJson({ ...prepared, fundingId, grossAmount }));
+  } catch (err) {
+    handleError(res, err, 'prepareDistributionFunding');
+  }
+});
+
+app.post('/api/distributions/:contractId/record-funding', async (req, res) => {
+  try {
+    await authorizeRequest(req, 'finalize', authConfig);
+    const contractId = requireId(req.params['contractId'], 'contractId');
+    const record = await getDistributionOrThrow(contractId);
+    const fundedOutstanding = new Decimal(record.totalFunded).minus(record.totalGrossSettled);
+    if (record.currentAllocationCid || !fundedOutstanding.eq(0)) {
+      throw new AuthError(
+        409,
+        'distribution_already_funded',
+        'The current allocation runway must be exhausted before another allocation is recorded',
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const result = await recordDistributionFundingViaJson({
+      operator: requireDistributionOperator(),
+      contractId,
+      amount: requireAmount(body['amount'], 'amount'),
+      fundingId: requireId(body['fundingId'], 'fundingId'),
+      allocationCid: requireId(body['allocationCid'], 'allocationCid'),
+      originalAllocationCid: optionalId(
+        body['originalAllocationCid'],
+        'originalAllocationCid',
+      ),
+      settlementDeadline: requireDate(body['settlementDeadline'], 'settlementDeadline'),
+      expectedSequence: record.fundingCount + 1,
+    });
+    res.json(result);
+  } catch (err) {
+    handleError(res, err, 'recordDistributionFunding');
+  }
+});
+
+app.post('/api/distributions/:contractId/prepare-recipient-authorization', async (req, res) => {
+  try {
+    const auth = await authorizeRequest(req, 'accept', authConfig);
+    const contractId = requireId(req.params['contractId'], 'contractId');
+    const record = await getDistributionOrThrow(contractId);
+    if (record.status !== 'AwaitingRecipients' || !record.lastFundingId) {
+      throw new AuthError(
+        409,
+        'distribution_not_awaiting_recipients',
+        'Distribution must have reconciled payer funding before recipients authorize it',
+      );
+    }
+    if (!record.currentSettlementDeadline) {
+      throw new AuthError(
+        409,
+        'distribution_deadline_missing',
+        'The reconciled payer allocation has no settlement deadline',
+      );
+    }
+    if (!DISTRIBUTION_REGISTRY_API_URL || !DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID) {
+      throw new AuthError(
+        503,
+        'distribution_registry_not_configured',
+        'Recipient authorization requires DISTRIBUTION_REGISTRY_API_URL and V2_ALLOCATION_FACTORY_INTERFACE_ID',
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const receiverAccount = parseDistributionAccount(body['receiverAccount'], 'receiverAccount');
+    enforceRole(auth.party, 'recipient', receiverAccount.owner);
+    const configured = configuredDistributionReceiverAccounts(record).some((account) =>
+      sameDistributionAccount(account, receiverAccount),
+    );
+    if (!configured) {
+      throw new AuthError(
+        403,
+        'recipient_scope_violation',
+        'The selected receiver account is not configured for this distribution',
+      );
+    }
+    if (
+      record.recipientAuthorizations.some((authorization) =>
+        sameDistributionAccount(authorization.receiver, receiverAccount),
+      )
+    ) {
+      throw new AuthError(
+        409,
+        'recipient_already_authorized',
+        'This receiver account is already authorized for the current allocation chain',
+      );
+    }
+    const requestedAt = optionalDate(body['requestedAt'], 'requestedAt') ?? new Date();
+    const settlementDeadline = new Date(record.currentSettlementDeadline);
+    if (settlementDeadline <= requestedAt) {
+      throw new AuthError(
+        409,
+        'distribution_deadline_expired',
+        'The payer allocation deadline has passed; the current chain must be released and funded again',
+      );
+    }
+    const authorizationId = requireId(
+      body['authorizationId'] ??
+        `${record.lastFundingId}:receiver:${record.recipientAuthorizations.length + 1}`,
+      'authorizationId',
+    );
+    const prepared = await prepareDistributionRecipientAuthorization({
+      receiverAccount,
+      payerAccount: record.payerAccount,
+      instrumentId: record.instrumentId,
+      grossAmount: record.grossAmountPerPeriod,
+      grossAmountPerPeriod: record.grossAmountPerPeriod,
+      legs: record.legs,
+      settlement: {
+        executors: [record.operator],
+        executor: record.operator,
+        settlementRefId: record.lastFundingId,
+        requestedAt,
+        settleBefore: settlementDeadline,
+        meta: {
+          'cantonstreams.dev/stream-id': record.streamId,
+          'cantonstreams.dev/distribution-record': record.contractId,
+        },
+      },
+      settlementDeadline,
+      requestedAt,
+      registryApiUrl: DISTRIBUTION_REGISTRY_API_URL,
+      allocationFactoryInterfaceId: DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID,
+      registryToken: process.env['DISTRIBUTION_REGISTRY_TOKEN'],
+      meta: {
+        'cantonstreams.dev/stream-id': record.streamId,
+        'cantonstreams.dev/recipient-authorization-id': authorizationId,
+      },
+    });
+    res.json(serializeForJson({ ...prepared, authorizationId, receiverAccount }));
+  } catch (err) {
+    handleError(res, err, 'prepareDistributionRecipientAuthorization');
+  }
+});
+
+app.post('/api/distributions/:contractId/record-recipient-authorization', async (req, res) => {
+  try {
+    await authorizeRequest(req, 'finalize', authConfig);
+    const contractId = requireId(req.params['contractId'], 'contractId');
+    const record = await getDistributionOrThrow(contractId);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const receiver = parseDistributionAccount(body['receiverAccount'], 'receiverAccount');
+    const result = await recordDistributionRecipientAuthorizationViaJson({
+      operator: requireDistributionOperator(),
+      contractId,
+      receiver,
+      authorizationId: requireId(body['authorizationId'], 'authorizationId'),
+      allocationCid: requireId(body['allocationCid'], 'allocationCid'),
+      expectedCount: record.recipientAuthorizations.length + 1,
+    });
+    res.json(result);
+  } catch (err) {
+    handleError(res, err, 'recordDistributionRecipientAuthorization');
+  }
+});
+
+app.post('/api/distributions/:contractId/activate', async (req, res) => {
+  try {
+    await authorizeRequest(req, 'finalize', authConfig);
+    const contractId = requireId(req.params['contractId'], 'contractId');
+    await getDistributionOrThrow(contractId);
+    const result = await activateDistributionViaJson(requireDistributionOperator(), contractId);
+    res.json(result);
+  } catch (err) {
+    handleError(res, err, 'activateDistribution');
+  }
+});
+
+app.post('/api/distributions/:contractId/prepare-settlement', async (req, res) => {
+  try {
+    await authorizeRequest(req, 'finalize', authConfig);
+    if (!DISTRIBUTION_REGISTRY_API_URL || !DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID) {
+      throw new AuthError(
+        503,
+        'distribution_registry_not_configured',
+        'Distribution settlement requires DISTRIBUTION_REGISTRY_API_URL and V2_SETTLEMENT_FACTORY_INTERFACE_ID',
+      );
+    }
+    const contractId = requireId(req.params['contractId'], 'contractId');
+    const record = await getDistributionOrThrow(contractId);
+    if (record.status !== 'DistributionActive') {
+      throw new AuthError(409, 'distribution_not_active', 'Distribution must be active to settle');
+    }
+    if (!record.currentAllocationCid || !record.lastFundingId) {
+      throw new AuthError(
+        409,
+        'distribution_not_funded',
+        'Distribution has no reconciled active allocation',
+      );
+    }
+    const missingReceiverAuthorization = configuredDistributionReceiverAccounts(record).some(
+      (account) =>
+        !record.recipientAuthorizations.some((authorization) =>
+          sameDistributionAccount(authorization.receiver, account),
+        ),
+    );
+    if (missingReceiverAuthorization) {
+      throw new AuthError(
+        409,
+        'distribution_recipient_authorization_missing',
+        'Every receiver account must have a reconciled V2 allocation before settlement',
+      );
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const settledAt = optionalDate(body['settledAt'], 'settledAt') ?? new Date();
+    if (settledAt.getTime() > Date.now()) {
+      throw new AuthError(400, 'invalid_input', 'Invalid settledAt: must not be in the future');
+    }
+    const periodAmount = new Decimal(record.grossAmountPerPeriod);
+    const accruedOutstanding = calculateDistributionAccruedGross(record, settledAt).minus(
+      record.totalGrossSettled,
+    );
+    if (accruedOutstanding.lt(periodAmount)) {
+      throw new AuthError(409, 'distribution_not_due', 'No complete unsettled period is due');
+    }
+    const fundedOutstanding = new Decimal(record.totalFunded).minus(record.totalGrossSettled);
+    if (fundedOutstanding.lt(periodAmount)) {
+      throw new AuthError(409, 'distribution_funding_exhausted', 'Funded runway is exhausted');
+    }
+    const remainingAfterSettlement = fundedOutstanding.minus(periodAmount);
+    const nextIterationFunding = remainingAfterSettlement.gt(0)
+      ? { [record.instrumentId.id]: remainingAfterSettlement }
+      : undefined;
+    const prepared = await prepareDistributionSettlement({
+      payerAccount: record.payerAccount,
+      instrumentId: record.instrumentId,
+      grossAmount: periodAmount,
+      grossAmountPerPeriod: periodAmount,
+      legs: record.legs,
+      settlement: {
+        executors: [record.operator],
+        executor: record.operator,
+        settlementRefId: record.lastFundingId,
+        requestedAt: settledAt,
+        meta: {
+          'cantonstreams.dev/stream-id': record.streamId,
+          'cantonstreams.dev/distribution-record': record.contractId,
+        },
+      },
+      allocationCid: record.currentAllocationCid,
+      recipientAuthorizations: record.recipientAuthorizations,
+      nextIterationFunding,
+      registryApiUrl: DISTRIBUTION_REGISTRY_API_URL,
+      settlementFactoryInterfaceId: DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID,
+      registryToken: process.env['DISTRIBUTION_REGISTRY_TOKEN'],
+      meta: {
+        'cantonstreams.dev/stream-id': record.streamId,
+        'cantonstreams.dev/settlement-sequence': String(record.settlementCount + 1),
+      },
+    });
+    res.json(
+      serializeForJson({
+        ...prepared,
+        grossAmount: periodAmount,
+        settledAt,
+        allocationCid: record.currentAllocationCid,
+        allocationOrder: [
+          { kind: 'payer', allocationCid: record.currentAllocationCid },
+          ...record.recipientAuthorizations.map((authorization) => ({
+            kind: 'recipient',
+            authorizationId: authorization.authorizationId,
+            receiver: authorization.receiver,
+            allocationCid: authorization.allocationCid,
+          })),
+        ],
+        nextIterationFunding,
+      }),
+    );
+  } catch (err) {
+    handleError(res, err, 'prepareDistributionSettlement');
+  }
+});
+
+app.post('/api/distributions/:contractId/record-settlement', async (req, res) => {
+  try {
+    await authorizeRequest(req, 'finalize', authConfig);
+    const contractId = requireId(req.params['contractId'], 'contractId');
+    const record = await getDistributionOrThrow(contractId);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const grossAmount = requireAmount(body['grossAmount'], 'grossAmount');
+    const periodAmount = new Decimal(record.grossAmountPerPeriod);
+    if (!grossAmount.eq(periodAmount)) {
+      throw new AuthError(
+        400,
+        'invalid_distribution_settlement',
+        'grossAmount must equal one configured distribution period',
+      );
+    }
+    const remainingAfterSettlement = new Decimal(record.totalFunded)
+      .minus(record.totalGrossSettled)
+      .minus(grossAmount);
+    const newAllocationCid = optionalId(body['newAllocationCid'], 'newAllocationCid');
+    if (remainingAfterSettlement.gt(0) !== Boolean(newAllocationCid)) {
+      throw new AuthError(
+        400,
+        'invalid_distribution_settlement',
+        remainingAfterSettlement.gt(0)
+          ? 'newAllocationCid is required while funded runway remains'
+          : 'newAllocationCid must be omitted when the allocation runway is exhausted',
+      );
+    }
+    const replacementMapRaw = body['newRecipientAllocationCids'];
+    if (
+      replacementMapRaw !== undefined &&
+      (typeof replacementMapRaw !== 'object' ||
+        replacementMapRaw === null ||
+        Array.isArray(replacementMapRaw))
+    ) {
+      throw new AuthError(
+        400,
+        'invalid_input',
+        'Invalid newRecipientAllocationCids: expected an authorization-id to contract-id object',
+      );
+    }
+    const replacementMap = (replacementMapRaw ?? {}) as Record<string, unknown>;
+    const expectedAuthorizationIds = new Set(
+      record.recipientAuthorizations.map((authorization) => authorization.authorizationId),
+    );
+    const unexpectedAuthorizationIds = Object.keys(replacementMap).filter(
+      (authorizationId) => !expectedAuthorizationIds.has(authorizationId),
+    );
+    if (unexpectedAuthorizationIds.length > 0) {
+      throw new AuthError(
+        400,
+        'invalid_distribution_settlement',
+        `newRecipientAllocationCids contains unknown authorization ids: ${unexpectedAuthorizationIds.join(', ')}`,
+      );
+    }
+    const newRecipientAuthorizations = remainingAfterSettlement.gt(0)
+      ? record.recipientAuthorizations.map((authorization) => ({
+          ...authorization,
+          allocationCid: requireId(
+            replacementMap[authorization.authorizationId],
+            `newRecipientAllocationCids.${authorization.authorizationId}`,
+          ),
+        }))
+      : [];
+    if (!remainingAfterSettlement.gt(0) && Object.keys(replacementMap).length > 0) {
+      throw new AuthError(
+        400,
+        'invalid_distribution_settlement',
+        'newRecipientAllocationCids must be empty when the allocation runway is exhausted',
+      );
+    }
+    const result = await recordDistributionSettlementViaJson({
+      operator: requireDistributionOperator(),
+      contractId,
+      grossAmount,
+      grossAmountPerPeriod: record.grossAmountPerPeriod,
+      legs: record.legs,
+      settlementId: requireId(body['settlementId'], 'settlementId'),
+      settledAt: requireDate(body['settledAt'], 'settledAt'),
+      newAllocationCid,
+      newRecipientAuthorizations,
+      expectedSequence: record.settlementCount + 1,
+    });
+    res.json(result);
+  } catch (err) {
+    handleError(res, err, 'recordDistributionSettlement');
+  }
+});
+
+app.post('/api/distributions/:contractId/state', async (req, res) => {
+  try {
+    await authorizeRequest(req, 'finalize', authConfig);
+    const contractId = requireId(req.params['contractId'], 'contractId');
+    await getDistributionOrThrow(contractId);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const action = body['action'];
+    if (action !== 'pause' && action !== 'resume' && action !== 'complete' && action !== 'cancel') {
+      throw new AuthError(
+        400,
+        'invalid_input',
+        'Invalid action: expected pause, resume, complete, or cancel',
+      );
+    }
+    const result = await changeDistributionStateViaJson(
+      requireDistributionOperator(),
+      contractId,
+      action,
+      optionalId(body['releasedAllocationCid'], 'releasedAllocationCid'),
+    );
+    res.json(result);
+  } catch (err) {
+    handleError(res, err, 'changeDistributionState');
   }
 });
 

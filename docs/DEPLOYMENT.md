@@ -41,21 +41,21 @@ pnpm daml:deps       # download Splice V2 dependency DARs into packages/daml/mai
 pnpm daml:build      # compile all Daml packages
 ```
 
-Output: `packages/daml/main/.daml/dist/canton-streams-1.3.0.dar`.
+Output: `packages/daml/main/.daml/dist/canton-streams-1.4.0.dar`.
 
 **Upload to a participant:**
 
 ```bash
 # Via Canton Admin API (gRPC)
 grpcurl -plaintext \
-  -d "{\"dar_file\": \"$(base64 -i packages/daml/main/.daml/dist/canton-streams-1.3.0.dar)\"}" \
+  -d "{\"dar_file\": \"$(base64 -i packages/daml/main/.daml/dist/canton-streams-1.4.0.dar)\"}" \
   localhost:5002 \
   com.digitalasset.canton.admin.participant.v30.PackageService/UploadDar
 
 # Or via the daml CLI
 daml ledger upload-dar \
   --host localhost --port 5001 \
-  packages/daml/main/.daml/dist/canton-streams-1.3.0.dar
+  packages/daml/main/.daml/dist/canton-streams-1.4.0.dar
 ```
 
 **Vet the package on the synchronizer:**

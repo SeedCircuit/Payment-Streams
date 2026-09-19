@@ -30,6 +30,7 @@ type NavEntry = NavItem | NavDivider;
 const NAV: ReadonlyArray<NavEntry> = [
   { route: '/', label: 'Dashboard', icon: 'Dashboard' },
   { route: '/streams', label: 'Streams', icon: 'Stream' },
+  { route: '/distributions', label: 'Distributions', icon: 'Layers' },
   { route: '/v1/escrows', label: 'Vault', icon: 'Lock' },
   { route: '/inbox', label: 'Inbox', icon: 'Inbox', badgeKey: 'inbox' },
   { divider: true },

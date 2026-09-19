@@ -72,6 +72,7 @@ This repo is not a good fit when:
 | `StreamAdmin` | Prefunded bounded stream with a start, end, and vesting mode | Vesting, subscriptions, scheduled payouts |
 | `StreamFlow` | Rolling stream that can be topped up, paused, resumed, and renewed | Payroll-like flows, recurring incentives |
 | `MilestoneAdmin` | Multi-leg release flow where named milestones unlock funds | Project delivery, KPI payouts, staged unlocks |
+| `DistributionStreamRecord` | Splits each V2 settlement across percentage or fixed-amount destinations | Revenue share, fees, multi-party recurring payments |
 
 ### Vesting Modes
 
@@ -320,6 +321,7 @@ Run the main checks:
 pnpm --filter @canton-streams/sdk test
 pnpm --filter @canton-streams/dashboard test
 pnpm --filter @canton-streams/proxy build
+node --test packages/proxy/test/distribution.test.mjs
 pnpm --filter @canton-streams/dashboard build
 bash scripts/check-v2-conformance.sh
 docker compose -f docker/docker-compose.yml config

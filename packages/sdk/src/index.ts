@@ -82,6 +82,15 @@ export {
   CHOICE_EXECUTE_POLICY,
   CHOICE_REVOKE_POLICY,
   TEMPLATE_STREAM_FLOW,
+  TEMPLATE_DISTRIBUTION_STREAM,
+  CHOICE_RECORD_DISTRIBUTION_FUNDING,
+  CHOICE_RECORD_DISTRIBUTION_RECIPIENT_AUTHORIZATION,
+  CHOICE_ACTIVATE_DISTRIBUTION,
+  CHOICE_RECORD_DISTRIBUTION_SETTLEMENT,
+  CHOICE_PAUSE_DISTRIBUTION,
+  CHOICE_RESUME_DISTRIBUTION,
+  CHOICE_COMPLETE_DISTRIBUTION,
+  CHOICE_CANCEL_DISTRIBUTION,
   CHOICE_TOP_UP_FLOW,
   CHOICE_WITHDRAW_FLOW,
   CHOICE_PAUSE_FLOW,
@@ -210,7 +219,48 @@ export {
   buildAllocationSettle,
   buildAllocationCancel,
   buildBatchSettlement,
+  buildAllocationFactoryAllocateJson,
+  buildSettlementFactorySettleBatchJson,
 } from './commands/allocation.js';
+
+export {
+  validateDistribution,
+  calculateDistributionAmounts,
+  buildDistributionCreate,
+  buildDistributionAllocationRequest,
+  buildDistributionAllocationFactoryPlan,
+  buildDistributionRecipientAllocationFactoryPlan,
+  buildDistributionSettlementFactoryPlan,
+  recordDistributionFunding,
+  recordDistributionRecipientAuthorization,
+  activateDistribution,
+  recordDistributionSettlement,
+  pauseDistribution,
+  resumeDistribution,
+  completeDistribution,
+  cancelDistribution,
+} from './commands/distribution.js';
+export type {
+  DistributionRule,
+  DistributionLeg,
+  DistributionSettlementLeg,
+  DistributionRecipientAuthorization,
+  DistributionFundingMode,
+  DistributionStatus,
+  CreateDistributionParams,
+  DistributionCreatePayload,
+  BuildDistributionAllocationRequestParams,
+  DistributionAllocationRequest,
+  BuildDistributionAllocationFactoryParams,
+  DistributionAllocationFactoryPlan,
+  BuildDistributionRecipientAllocationFactoryParams,
+  DistributionRecipientAllocationFactoryPlan,
+  BuildDistributionSettlementFactoryParams,
+  DistributionSettlementFactoryPlan,
+  RecordDistributionFundingParams,
+  RecordDistributionRecipientAuthorizationParams,
+  RecordDistributionSettlementParams,
+} from './commands/distribution.js';
 export type {
   AllocationRequestPayload,
   BuildAllocationRequestParams,
@@ -221,6 +271,11 @@ export type {
   NextIterationFunding,
   AllocationMetadata,
   AllocationView,
+  AllocationFactoryAllocateParams,
+  SettlementFactorySettleBatchJsonParams,
+  BatchTransferLegV2,
+  FinalizedAllocationV2,
+  BatchSettlementParams,
 } from './commands/allocation.js';
 
 // CIP-56 V1 lane builders (transitional — see commands/allocation-v1.ts
@@ -254,6 +309,7 @@ export type { AssetConfig, AssetRegistryFile } from './assets/registry.js';
 export {
   fetchAllocationChoiceContext,
   fetchAllocationFactory,
+  fetchSettlementFactory,
   RegistryApiError,
 } from './settlement/choice-context.js';
 export type {
@@ -261,6 +317,8 @@ export type {
   FetchChoiceContextParams,
   AllocationFactoryRequest,
   AllocationFactoryResult,
+  SettlementFactoryRequest,
+  SettlementFactoryResult,
 } from './settlement/choice-context.js';
 export type { DisclosedContract, CommandOptions } from './transport/base.js';
 export type {

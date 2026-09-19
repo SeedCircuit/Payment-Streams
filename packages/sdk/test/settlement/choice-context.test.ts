@@ -17,6 +17,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   fetchAllocationChoiceContext,
   fetchAllocationFactory,
+  fetchSettlementFactory,
   RegistryApiError,
 } from '../../src/settlement/choice-context.js';
 import { buildAllocationExecuteTransferV1 } from '../../src/commands/allocation-v1.js';
@@ -155,6 +156,43 @@ describe('fetchAllocationFactory', () => {
     mockFetch(200, { choiceContext: {} });
     await expect(fetchAllocationFactory('https://scan.example', { choiceArguments: {} }))
       .rejects.toThrow(/missing factoryId/);
+  });
+
+  it('uses the V2 allocation-instruction endpoint when requested', async () => {
+    const fetchFn = mockFetch(200, { factoryId: 'factory-v2', choiceContext: {} });
+    await fetchAllocationFactory('https://scan.example', {
+      choiceArguments: { settlement: { id: 'distribution-1' } },
+      version: 'v2',
+    });
+    const [url] = fetchFn.mock.calls[0]! as [string];
+    expect(url).toBe('https://scan.example/registry/allocation-instruction/v2/allocation-factory');
+  });
+});
+
+describe('fetchSettlementFactory', () => {
+  it('uses the canonical V2 settlement-factory endpoint', async () => {
+    const fetchFn = mockFetch(200, {
+      factoryId: 'settlement-factory-v2',
+      choiceContext: {
+        choiceContextData: { values: { rules: 'rules-cid' } },
+        disclosedContracts: [],
+      },
+    });
+
+    const result = await fetchSettlementFactory('https://scan.example/', {
+      choiceArguments: { settlement: { id: 'distribution-1' } },
+    });
+
+    const [url, init] = fetchFn.mock.calls[0]! as [string, RequestInit];
+    expect(url).toBe('https://scan.example/registry/allocation/v2/settlement-factory');
+    expect(JSON.parse(String(init.body))).toEqual({
+      choiceArguments: { settlement: { id: 'distribution-1' } },
+      excludeDebugFields: true,
+    });
+    expect(result).toEqual({
+      factoryId: 'settlement-factory-v2',
+      choiceContext: { values: { rules: 'rules-cid' }, disclosedContracts: [] },
+    });
   });
 });
 

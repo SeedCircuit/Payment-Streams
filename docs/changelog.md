@@ -4,6 +4,10 @@ All notable changes to Canton Payment Streams are documented here. The format is
 
 ## [Unreleased]
 
+### Added
+
+- **Generic multi-recipient distribution streams** — operator-hosted, non-custodial schedule records with percentage or fixed-amount destinations; paired payer `SenderSide` and destination `ReceiverSide` allocations through standard wallet flows; atomic operator settlement through `SettlementFactory_SettleBatch`; multi-period runway through `nextIterationFunding`; participant-scoped dashboard views and an integration guide.
+
 ## [1.0.0] - 2026-07-23
 
 First stable release. Consolidates the CIP-56 V2 Token Standard settlement path with an operator-custodied streaming option, and lands a security-hardening pass over the settlement and custody code.
@@ -32,7 +36,7 @@ First stable release. Consolidates the CIP-56 V2 Token Standard settlement path 
 
 ### Fixed
 
-- The `canton-streams-scripts` Daml package referenced a stale `canton-streams-1.1.0` dependency and could not build; it now tracks the current `1.3.0` package, so the full Daml build loop completes.
+- The `canton-streams-scripts` Daml package referenced a stale `canton-streams-1.1.0` dependency and could not build; it now tracks the release's current Daml package, so the full Daml build loop completes.
 
 ## [1.0.0-rc.1] - 2026-06-11
 
