@@ -205,12 +205,12 @@ describe('buildDistributionAllocationRequest', () => {
 });
 
 describe('buildDistributionAllocationFactoryPlan', () => {
-  it('builds one wallet-ready V2 allocation with all destination sides', () => {
+  it('builds a canonical prefunded V2 allocation without fixed transfer legs', () => {
     const result = buildDistributionAllocationFactoryPlan({
       sender: 'consumer',
       payerAccount: { owner: 'consumer', id: '' },
       instrumentId: { admin: 'cc-admin', id: 'Amulet' },
-      grossAmount: '4794.51',
+      grossAmount: '684.93',
       grossAmountPerPeriod: '684.93',
       legs: percentageLegs,
       settlement: {
@@ -221,6 +221,7 @@ describe('buildDistributionAllocationFactoryPlan', () => {
       settlementDeadline: new Date('2026-02-08T00:00:00Z'),
       requestedAt: new Date('2026-01-08T00:00:00Z'),
       inputHoldingCids: ['holding-1'],
+      nextIterationFunding: { Amulet: '20547.90' },
       choiceContextValues: { round: 'round-contract' },
     });
     expect(result.choiceArguments).toMatchObject({
@@ -233,20 +234,8 @@ describe('buildDistributionAllocationFactoryPlan', () => {
         authorizer: { owner: 'consumer', provider: null, id: '' },
         committed: true,
         settlementDeadline: '2026-02-08T00:00:00.000Z',
-        transferLegSides: [
-          {
-            transferLegId: 'supplier',
-            side: 'SenderSide',
-            otherside: { owner: 'supplier', provider: null, id: '' },
-            amount: '4315.0590000000',
-          },
-          {
-            transferLegId: 'facilitator',
-            side: 'SenderSide',
-            otherside: { owner: 'platform', provider: null, id: 'fees' },
-            amount: '479.4510000000',
-          },
-        ],
+        transferLegSides: [],
+        nextIterationFunding: { Amulet: '20547.9000000000' },
       },
       inputHoldingCids: ['holding-1'],
       actors: ['consumer'],
@@ -276,6 +265,7 @@ describe('buildDistributionRecipientAllocationFactoryPlan', () => {
     expect(result.choiceArguments).toMatchObject({
       allocation: {
         authorizer: { owner: 'supplier', provider: null, id: '' },
+        committed: false,
         transferLegSides: [
           {
             transferLegId: 'supplier',
@@ -284,7 +274,7 @@ describe('buildDistributionRecipientAllocationFactoryPlan', () => {
             amount: '616.4370000000',
           },
         ],
-        nextIterationFunding: {},
+        nextIterationFunding: null,
       },
       inputHoldingCids: [],
       actors: ['supplier'],
@@ -350,18 +340,31 @@ describe('buildDistributionSettlementFactoryPlan', () => {
       allocations: [
         {
           allocationCid: 'allocation-cid-1',
-          extraTransferLegSides: [],
+          extraTransferLegSides: [
+            {
+              transferLegId: 'supplier',
+              side: 'SenderSide',
+              otherside: { owner: 'supplier', provider: null, id: '' },
+              amount: '616.4370000000',
+            },
+            {
+              transferLegId: 'facilitator',
+              side: 'SenderSide',
+              otherside: { owner: 'platform', provider: null, id: 'fees' },
+              amount: '68.4930000000',
+            },
+          ],
           nextIterationFunding: { Amulet: '19862.9700000000' },
         },
         {
           allocationCid: 'supplier-allocation-cid',
           extraTransferLegSides: [],
-          nextIterationFunding: {},
+          nextIterationFunding: null,
         },
         {
           allocationCid: 'platform-allocation-cid',
           extraTransferLegSides: [],
-          nextIterationFunding: {},
+          nextIterationFunding: null,
         },
       ],
       actors: ['operator'],

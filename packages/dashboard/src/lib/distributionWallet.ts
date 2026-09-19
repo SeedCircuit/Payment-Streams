@@ -59,7 +59,7 @@ export async function fundDistributionWithWallet(
     throw new Error('Funding runway must be at least one whole period.');
   }
   const periodAmount = new Decimal(params.record.grossAmountPerPeriod);
-  const reservedAmount = periodAmount.times(params.periods - 1);
+  const prefundedAmount = periodAmount.times(params.periods);
   const holdings = await readPayerHoldings(params.payerParty, {
     instrumentId: params.record.instrumentId.id,
     instrumentAdmin: params.record.instrumentId.admin,
@@ -69,9 +69,7 @@ export async function fundDistributionWithWallet(
     grossAmount: periodAmount.toFixed(10),
     settlementDeadline: params.settlementDeadline.toISOString(),
     inputHoldingCids: holdings.map((holding) => holding.cid),
-    ...(reservedAmount.gt(0)
-      ? { nextIterationFunding: { [params.record.instrumentId.id]: reservedAmount.toFixed(10) } }
-      : {}),
+    nextIterationFunding: { [params.record.instrumentId.id]: prefundedAmount.toFixed(10) },
   });
   const response = await submitAndWait([prepared.command], params.payerParty, {
     disclosedContracts: prepared.disclosedContracts,

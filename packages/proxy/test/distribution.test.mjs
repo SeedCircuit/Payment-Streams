@@ -188,7 +188,8 @@ test('prepareDistributionFunding reports the full multi-period wallet commitment
   globalThis.fetch = async (url, init) => {
     assert.equal(url, 'https://scan.example/registry/allocation-instruction/v2/allocation-factory');
     const body = JSON.parse(init.body);
-    assert.equal(body.choiceArguments.allocation.nextIterationFunding.Amulet, '19862.9700000000');
+    assert.deepEqual(body.choiceArguments.allocation.transferLegSides, []);
+    assert.equal(body.choiceArguments.allocation.nextIterationFunding.Amulet, '20547.9000000000');
     return {
       ok: true,
       status: 200,
@@ -218,7 +219,7 @@ test('prepareDistributionFunding reports the full multi-period wallet commitment
       settlementDeadline: new Date('2026-10-20T00:00:00Z'),
       requestedAt: input.startTime,
       inputHoldingCids: ['holding-cid'],
-      nextIterationFunding: { Amulet: '19862.97' },
+      nextIterationFunding: { Amulet: '20547.90' },
       registryApiUrl: 'https://scan.example',
       allocationFactoryInterfaceId: 'pkg:AllocationV2:AllocationFactory',
     });
@@ -291,13 +292,24 @@ test('prepareDistributionSettlement builds an operator-only canonical batch sett
       '19862.9700000000',
     );
     assert.deepEqual(
+      command.choiceArgument.allocations[0].extraTransferLegSides.map((leg) => ({
+        id: leg.transferLegId,
+        side: leg.side,
+        amount: leg.amount,
+      })),
+      [
+        { id: 'supplier', side: 'SenderSide', amount: '616.4370000000' },
+        { id: 'facilitator-fee', side: 'SenderSide', amount: '68.4930000000' },
+      ],
+    );
+    assert.deepEqual(
       command.choiceArgument.allocations.slice(1).map((allocation) => ({
         cid: allocation.allocationCid,
         next: allocation.nextIterationFunding,
       })),
       [
-        { cid: 'supplier-allocation-cid', next: {} },
-        { cid: 'platform-allocation-cid', next: {} },
+        { cid: 'supplier-allocation-cid', next: null },
+        { cid: 'platform-allocation-cid', next: null },
       ],
     );
   } finally {

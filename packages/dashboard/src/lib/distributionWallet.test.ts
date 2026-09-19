@@ -75,7 +75,7 @@ describe('distribution wallet orchestration', () => {
     expect(readPayerHoldings).not.toHaveBeenCalled();
   });
 
-  it('funds one active period and reserves the remaining runway', async () => {
+  it('prefunds the complete iterated-settlement runway', async () => {
     vi.mocked(readPayerHoldings).mockResolvedValue([{ cid: 'holding-cid', amount: 500 }]);
     const prepareDistributionFunding = vi.fn().mockResolvedValue({
       command: { ExerciseCommand: { choice: 'AllocationFactory_Allocate' } },
@@ -97,7 +97,7 @@ describe('distribution wallet orchestration', () => {
       grossAmount: '100.0000000000',
       settlementDeadline: '2026-10-20T00:00:00.000Z',
       inputHoldingCids: ['holding-cid'],
-      nextIterationFunding: { Amulet: '200.0000000000' },
+      nextIterationFunding: { Amulet: '300.0000000000' },
     });
     expect(submitAndWait).toHaveBeenCalledWith(
       [{ ExerciseCommand: { choice: 'AllocationFactory_Allocate' } }],

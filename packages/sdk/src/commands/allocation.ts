@@ -295,14 +295,21 @@ export function buildAllocationFactoryAllocateJson(
   params: AllocationFactoryAllocateParams,
 ): Record<string, unknown> {
   const executors = resolveExecutors(params.settlement);
-  if (params.transferLegSides.length === 0) {
-    throw new Error('AllocationFactory_Allocate requires at least one transfer leg');
+  const iterationFunding = Object.values(params.nextIterationFunding ?? {}).map(
+    (amount) => new Decimal(amount),
+  );
+  if (iterationFunding.some((amount) => !amount.isFinite() || amount.lte(0))) {
+    throw new Error('AllocationFactory_Allocate iteration funding must be positive');
+  }
+  if (params.transferLegSides.length === 0 && iterationFunding.length === 0) {
+    throw new Error('AllocationFactory_Allocate requires transfer legs or iteration funding');
   }
   if (
     params.inputHoldingCids.length === 0 &&
-    params.transferLegSides.some((leg) => leg.side === 'SenderSide')
+    (params.transferLegSides.some((leg) => leg.side === 'SenderSide') ||
+      iterationFunding.length > 0)
   ) {
-    throw new Error('AllocationFactory_Allocate requires input holding cids for sender-side legs');
+    throw new Error('AllocationFactory_Allocate requires input holding cids for funded allocations');
   }
   const actors = [...new Set(params.actors)];
   if (actors.length === 0 || actors.some((actor) => actor.trim() === '')) {

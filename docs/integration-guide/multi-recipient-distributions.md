@@ -46,8 +46,8 @@ settlement ledger events are the payment source of truth.
 2. The payer opens the Streams dashboard and chooses the number of periods to
    fund.
 3. The proxy prepares `AllocationFactory_Allocate`. The payer reviews and signs
-   a `SenderSide` allocation in their wallet. One period is active and the
-   remaining runway is placed in `nextIterationFunding`.
+   a committed prefunding allocation in their wallet. Its transfer-leg list is
+   empty and the complete funded runway is placed in `nextIterationFunding`.
 4. The operator verifies the allocation on-ledger, records the full committed
    amount, allocation contract id, and settlement deadline.
 5. Each unique destination account signs a standard no-funds `ReceiverSide`
@@ -145,15 +145,15 @@ API:
 POST /api/distributions/<record-cid>/prepare-funding
 ```
 
-For 30 daily periods, submit one period as `grossAmount` and reserve the other
-29 periods:
+For 30 daily periods, submit one period as `grossAmount` and place the complete
+30-period runway in `nextIterationFunding`:
 
 ```json
 {
   "grossAmount": "684.93",
   "settlementDeadline": "2026-10-20T00:00:00Z",
   "inputHoldingCids": ["<payer-holding-cid>"],
-  "nextIterationFunding": { "Amulet": "19862.97" }
+  "nextIterationFunding": { "Amulet": "20547.90" }
 }
 ```
 
@@ -183,9 +183,9 @@ Content-Type: application/json
 }
 ```
 
-The returned `AllocationFactory_Allocate` command contains only that account's
-`ReceiverSide` legs, no input holdings, and an empty iterative-funding map. The
-destination submits it through its own wallet. The operator verifies the
+The returned uncommitted `AllocationFactory_Allocate` command contains only
+that account's `ReceiverSide` legs, no input holdings, and no iterative-funding
+map. The destination submits it through its own wallet. The operator verifies the
 resulting allocation and calls
 `POST /api/distributions/<record-cid>/record-recipient-authorization` with the
 `receiverAccount`, `authorizationId`, and `allocationCid`.

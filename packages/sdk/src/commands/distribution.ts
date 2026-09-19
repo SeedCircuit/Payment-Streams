@@ -404,22 +404,16 @@ export function buildDistributionAllocationFactoryPlan(
     params.grossAmountPerPeriod,
     params.legs,
   );
-  const amountById = new Map(settlementLegs.map((leg) => [leg.legId, leg.amount]));
-  const transferLegSides: TransferLegSideV2[] = params.legs.map((leg) => ({
-    transferLegId: leg.legId,
-    side: 'SenderSide',
-    otherside: leg.receiver,
-    amount: amountById.get(leg.legId)!,
-    instrumentId: params.instrumentId.id,
-    meta: leg.meta,
-  }));
+  const nextIterationFunding = params.nextIterationFunding ?? {
+    [params.instrumentId.id]: new Decimal(params.grossAmount),
+  };
   const factoryParams: AllocationFactoryAllocateParams = {
     settlement: params.settlement,
     admin: params.instrumentId.admin,
     authorizer: params.payerAccount,
-    transferLegSides,
+    transferLegSides: [],
     settlementDeadline: params.settlementDeadline,
-    nextIterationFunding: params.nextIterationFunding,
+    nextIterationFunding,
     committed: params.committed ?? true,
     allocationMeta: params.meta,
     requestedAt: params.requestedAt,
@@ -464,8 +458,7 @@ export function buildDistributionRecipientAllocationFactoryPlan(
       authorizer: params.receiverAccount,
       transferLegSides,
       settlementDeadline: params.settlementDeadline,
-      nextIterationFunding: {},
-      committed: params.committed ?? true,
+      committed: params.committed ?? false,
       allocationMeta: params.meta,
       requestedAt: params.requestedAt,
       inputHoldingCids: [],
@@ -488,6 +481,14 @@ export function buildDistributionSettlementFactoryPlan(
     params.legs,
   );
   const amountById = new Map(settlementLegs.map((leg) => [leg.legId, leg.amount]));
+  const payerSides: TransferLegSideV2[] = params.legs.map((leg) => ({
+    transferLegId: leg.legId,
+    side: 'SenderSide',
+    otherside: leg.receiver,
+    amount: amountById.get(leg.legId)!,
+    instrumentId: params.instrumentId.id,
+    meta: leg.meta,
+  }));
   return {
     choiceArguments: buildSettlementFactorySettleBatchJson({
       settlement: params.settlement,
@@ -502,6 +503,7 @@ export function buildDistributionSettlementFactoryPlan(
       allocations: [
         {
           allocationCid: params.allocationCid,
+          extraTransferLegSides: payerSides,
           nextIterationFunding:
             params.nextIterationFunding === undefined
               ? undefined
@@ -509,8 +511,6 @@ export function buildDistributionSettlementFactoryPlan(
         },
         ...params.recipientAuthorizations.map((authorization) => ({
           allocationCid: authorization.allocationCid,
-          nextIterationFunding:
-            params.nextIterationFunding === undefined ? undefined : { amounts: {} },
         })),
       ],
       actors: params.actors ?? params.settlement.executors ?? [params.settlement.executor],

@@ -326,7 +326,9 @@ export async function prepareDistributionFunding(
     choiceContextValues: factory.choiceContext.values,
     meta: input.meta,
   });
-  const reservedAmount = Object.values(input.nextIterationFunding ?? {}).reduce<Decimal>(
+  const committedAmount = Object.values(
+    input.nextIterationFunding ?? { [input.instrumentId.id]: input.grossAmount },
+  ).reduce<Decimal>(
     (sum, amount) => sum.plus(amount),
     new Decimal(0),
   );
@@ -345,7 +347,7 @@ export async function prepareDistributionFunding(
       legId: leg.legId,
       amount: leg.amount.toFixed(10),
     })),
-    committedAmount: new Decimal(input.grossAmount).plus(reservedAmount).toFixed(10),
+    committedAmount: committedAmount.toFixed(10),
   };
 }
 

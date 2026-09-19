@@ -2212,13 +2212,16 @@ app.post('/api/distributions/:contractId/prepare-funding', async (req, res) => {
       body['fundingId'] ?? `${record.streamId}:funding:${record.fundingCount + 1}`,
       'fundingId',
     );
-    const nextIterationFunding = parseAmountMap(
+    const requestedIterationFunding = parseAmountMap(
       body['nextIterationFunding'],
       'nextIterationFunding',
     );
-    let reservedAmount = new Decimal(0);
-    if (nextIterationFunding) {
-      const entries = Object.entries(nextIterationFunding);
+    let committedAmount = periodAmount;
+    let nextIterationFunding: Record<string, Decimal> = {
+      [record.instrumentId.id]: periodAmount,
+    };
+    if (requestedIterationFunding) {
+      const entries = Object.entries(requestedIterationFunding);
       if (entries.length !== 1 || entries[0]![0] !== record.instrumentId.id) {
         throw new AuthError(
           400,
@@ -2233,9 +2236,16 @@ app.post('/api/distributions/:contractId/prepare-funding', async (req, res) => {
           'nextIterationFunding must contain a whole number of configured periods',
         );
       }
-      reservedAmount = entries[0]![1];
+      if (entries[0]![1].lte(0)) {
+        throw new AuthError(
+          400,
+          'invalid_distribution_funding',
+          'nextIterationFunding must fund at least one configured period',
+        );
+      }
+      committedAmount = entries[0]![1];
+      nextIterationFunding = requestedIterationFunding;
     }
-    const committedAmount = periodAmount.plus(reservedAmount);
     if (record.endTime) {
       const scheduledPeriods = Math.floor(
         (new Date(record.endTime).getTime() - new Date(record.startTime).getTime()) /
