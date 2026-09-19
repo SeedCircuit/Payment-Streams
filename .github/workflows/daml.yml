@@ -23,6 +23,7 @@ on:
       - 'packages/daml/**'
       - 'scripts/fetch-v2-dars.mjs'
       - 'scripts/build-network-dar.mjs'
+      - 'scripts/check-daml-upgrade.sh'
       - 'scripts/v2-dar-pins.json'
       - 'scripts/test-all-daml.sh'
       - '.github/workflows/daml.yml'
@@ -32,6 +33,7 @@ on:
       - 'packages/daml/**'
       - 'scripts/fetch-v2-dars.mjs'
       - 'scripts/build-network-dar.mjs'
+      - 'scripts/check-daml-upgrade.sh'
       - 'scripts/v2-dar-pins.json'
       - 'scripts/test-all-daml.sh'
       - '.github/workflows/daml.yml'
@@ -53,6 +55,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -108,6 +112,9 @@ jobs:
 
       - name: Run Daml tests
         run: bash scripts/test-all-daml.sh
+
+      - name: Check Daml upgrade compatibility
+        run: bash scripts/check-daml-upgrade.sh
 
       - name: Upload built DARs as artifact
         if: always()

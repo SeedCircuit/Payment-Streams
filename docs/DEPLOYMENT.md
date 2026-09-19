@@ -57,6 +57,7 @@ package id, then run:
 pnpm daml:build:network -- \
   --official-dir /path/to/target-validator/dars \
   --interfaces-dar /path/to/vetted/canton-streams-interfaces-1.0.0.dar
+pnpm daml:upgrade-check
 ```
 
 The command checks the four direct official Token Standard dependencies,
@@ -64,7 +65,9 @@ builds `canton-streams` against their exact package ids, and writes the
 deployable DAR plus a dependency manifest to `dist/network/`. If the Streams
 interfaces package has never been vetted on that participant, omit
 `--interfaces-dar`; the command builds it and it must be uploaded and vetted
-with the main package.
+with the main package. The upgrade check reconstructs the deployed 1.3.0
+baseline and runs both compiler and participant compatibility validation
+against 1.4.0.
 
 Do not use a DAR from the `canton-streams-source-built-test-dars` CI artifact
 for network deployment. Selectively vetting the source-built DAR cannot make it
