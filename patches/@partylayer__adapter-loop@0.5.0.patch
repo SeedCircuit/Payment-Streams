@@ -1,0 +1,32 @@
+diff --git a/dist/index.js b/dist/index.js
+index 4e8a15f..095469b 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -639,9 +639,10 @@ var LoopAdapter = class {
+   mapNetworkToLoop(network) {
+     if (network === "local") return "local";
+     if (network === "devnet") return "devnet";
++    if (network === "testnet") return "testnet";
+     if (network === "mainnet") return "mainnet";
+     throw new Error(
+-      `Loop wallet does not support the "${network}" network (supported: local, devnet, mainnet).`
++      `Loop wallet does not support the "${network}" network (supported: local, devnet, testnet, mainnet).`
+     );
+   }
+ };
+diff --git a/dist/index.mjs b/dist/index.mjs
+index 33f0b47..a3fc582 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -637,9 +637,10 @@ var LoopAdapter = class {
+   mapNetworkToLoop(network) {
+     if (network === "local") return "local";
+     if (network === "devnet") return "devnet";
++    if (network === "testnet") return "testnet";
+     if (network === "mainnet") return "mainnet";
+     throw new Error(
+-      `Loop wallet does not support the "${network}" network (supported: local, devnet, mainnet).`
++      `Loop wallet does not support the "${network}" network (supported: local, devnet, testnet, mainnet).`
+     );
+   }
+ };

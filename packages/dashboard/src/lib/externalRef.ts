@@ -7,14 +7,20 @@ function emitChange(): void {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(EVENT));
 }
 
+function useSessionStorage(action: (storage: Storage) => void): void {
+  try {
+    action(window.sessionStorage);
+  } catch {
+    return;
+  }
+}
+
 export function captureExternalRefFromUrl(): void {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
   const raw = url.searchParams.get('externalRef') ?? url.searchParams.get('ref');
   if (raw && raw !== '') {
-    try {
-      window.sessionStorage.setItem(KEY, raw);
-    } catch {}
+    useSessionStorage((storage) => storage.setItem(KEY, raw));
   }
   if (url.searchParams.has('ref') || url.searchParams.has('externalRef')) {
     url.searchParams.delete('ref');
@@ -36,9 +42,7 @@ export function getStoredExternalRef(): string | undefined {
 
 export function clearStoredExternalRef(): void {
   if (typeof window === 'undefined') return;
-  try {
-    window.sessionStorage.removeItem(KEY);
-  } catch {}
+  useSessionStorage((storage) => storage.removeItem(KEY));
   emitChange();
 }
 

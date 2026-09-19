@@ -19,7 +19,7 @@
  * based on `walletClient.layer` + the active wallet id.
  *
  * Endpoint contract (extracted from
- * `@fivenorth/loop-sdk@0.10.0/dist/index.js` `Connection.getHolding`):
+ * `@fivenorth/loop-sdk` `Connection.getHolding`):
  *
  *   GET https://devnet.cantonloop.com/api/v1/.connect/pair/account/holding
  *   Authorization: Bearer <auth_token from loop_connect>

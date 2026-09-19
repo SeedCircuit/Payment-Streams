@@ -484,7 +484,8 @@ export const dappSdkWalletClient: StreamsWalletClient = {
         // configured gateway is down, rather than a generic "not connected".
         await assertRemoteWalletReachable();
       }
-      const result = await sdk.connect(initOptions);
+      await sdk.init(initOptions);
+      const result = await sdk.connect();
       // Wire any listeners registered before connect to the now-live client so
       // the layer starts receiving statusChanged/accountsChanged/txChanged.
       await reattachBufferedListeners();

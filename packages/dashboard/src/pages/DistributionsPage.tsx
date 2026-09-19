@@ -114,7 +114,9 @@ export function DistributionsPage() {
           ? 'Wallet funding committed. The operator will reconcile it, then each destination authorizes receipt before activation.'
           : 'The wallet accepted the command but did not return a ledger update id. Do not retry blindly; wait for operator reconciliation.',
       );
-    } catch {}
+    } catch {
+      return;
+    }
   };
 
   const authorizeReceiver = async (
@@ -137,7 +139,9 @@ export function DistributionsPage() {
             ? 'Wallet authorization submitted. The operator will verify the receiver allocation and activate after every destination is ready.'
             : 'The wallet accepted the authorization without an update id. Do not retry blindly; wait for operator reconciliation.',
       });
-    } catch {}
+    } catch {
+      return;
+    }
   };
 
   const records = distributions.data ?? [];
