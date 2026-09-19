@@ -638,13 +638,6 @@ async function getStreamOrThrow(client: CantonStreamsClient, sender: string, str
 /**
  * Recursively convert Decimal instances to strings for JSON serialization.
  */
-/**
- * Caller-supplied external reference for on-chain reconciliation. Read verbatim
- * from the request body (`externalRef`, or the shorter `ref`) or the same query
- * params (so `POST /api/v1/streams?ref=…` works for direct API callers too).
- * Empty/absent ⇒ undefined, so no `cantonstreams.dev/external-ref` key is
- * stamped. Never transformed — the servicing side matches it by exact equality.
- */
 function readExternalRef(req: express.Request): string | undefined {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const query = (req.query ?? {}) as Record<string, unknown>;

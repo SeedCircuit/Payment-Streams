@@ -101,7 +101,6 @@ export function CreateStreamV1Form() {
       return;
     }
     setSubmitError(null);
-    // The sticky ref captured from the landing `?ref=` (see lib/externalRef).
     const externalRef = getStoredExternalRef();
     const params: V1CreateStreamParams = {
       payerParty: party,
@@ -116,8 +115,6 @@ export function CreateStreamV1Form() {
     };
     try {
       const view = await createStream.mutateAsync(params);
-      // One-shot: the ref is now locked onto this stream — forget it so it can't
-      // ride along onto an unrelated stream created later.
       if (externalRef) clearStoredExternalRef();
       navigate(`/v1/streams/${encodeURIComponent(view.agreement.agreementId)}`);
     } catch (err) {

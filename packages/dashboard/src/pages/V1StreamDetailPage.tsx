@@ -158,8 +158,6 @@ function V1Detail({ id, view }: { readonly id: string; readonly view: V1StreamVi
   const onSettle = async () => {
     setError(null);
     setResult(null);
-    // We already know the wallet can't cover this cycle — say so plainly rather
-    // than firing a doomed wallet prompt that returns a cryptic rejection.
     if (lowBalance) {
       const need = Math.max(0, settleCost - (bal.value ?? 0));
       setError(
@@ -194,14 +192,6 @@ function V1Detail({ id, view }: { readonly id: string; readonly view: V1StreamVi
       }
       setResult(res);
     } catch (err) {
-      // PartyLayer collapses ANY ledger failure whose text merely contains
-      // "rejected"/"denied" into a UserRejectedError with the misleading
-      // message "User rejected ledgerApi" — but keeps the real wallet/ledger
-      // reason verbatim on details.originalMessage. Prefer that. Never blame
-      // funds here: the known-low-balance case already returned above, so an
-      // error reaching this catch is by construction NOT insufficient funds.
-      // (Direct SDK path → err.details; the .data.details shape only appears
-      // if a future wallet layer routes through the provider bridge.)
       const e = err as {
         message?: string;
         code?: string;

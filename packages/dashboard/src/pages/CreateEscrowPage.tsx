@@ -59,8 +59,6 @@ export function CreateEscrowPage() {
         ratePerCycle: String(rateNum),
         cadenceSeconds,
         totalDeposit: String(depositNum),
-        // The sticky ref captured from the landing `?ref=`, stamped on every
-        // relayed release payout.
         ...(externalRef ? { externalRef } : {}),
         ...(assetKey && assetKey !== 'cc'
           ? {
@@ -71,7 +69,6 @@ export function CreateEscrowPage() {
             }
           : {}),
       });
-      // One-shot: the ref is now locked onto this vault — forget it.
       if (externalRef) clearStoredExternalRef();
       navigate(`/v1/escrows/${encodeURIComponent(escrow.escrowId)}`);
     } catch (e) {

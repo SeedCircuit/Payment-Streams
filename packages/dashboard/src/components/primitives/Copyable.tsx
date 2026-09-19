@@ -10,14 +10,8 @@ export interface CopyableProps {
   readonly value: string;
   readonly display?: string;
   readonly size?: number;
-  /** Ellipsis-truncate the display text so a long value (e.g. a party id) fits
-   * a constrained container; the copy icon stays visible. */
   readonly truncate?: boolean;
-  /** Override the display text colour (defaults to the muted `--fg-3`). */
   readonly color?: string;
-  /** `chip` (default) is the standalone mono pill; `inline` inherits the
-   * surrounding text's font/size/colour so it can sit inside a heading or
-   * sentence and only shows the copy icon on hover / after copy. */
   readonly variant?: 'chip' | 'inline';
 }
 
@@ -37,7 +31,6 @@ export function Copyable({ value, display, size = 12, truncate, color, variant =
 
   const inline = variant === 'inline';
   const iconSize = inline ? Math.max(12, Math.round(size * 0.5)) : 11;
-  // In a heading, keep the affordance quiet: reveal the icon on hover/after copy.
   const showIcon = inline ? hover || copied : true;
 
   return (

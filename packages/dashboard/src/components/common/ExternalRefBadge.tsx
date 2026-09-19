@@ -1,8 +1,3 @@
-/**
- * ExternalRefBadge — shows the sticky external ref that will be stamped onto the
- * next stream created, with an ✕ to drop it. Renders nothing when no ref is
- * stashed. Doubles as the operator's instant "did it capture?" check.
- */
 import type { CSSProperties } from 'react';
 import { X } from 'lucide-react';
 import { useStickyExternalRef } from '../../lib/externalRef.js';
