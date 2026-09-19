@@ -61,6 +61,6 @@ RUN groupadd --system --gid 10001 streams \
   && chown -R streams:streams /canton /build "${DPM_HOME}"
 USER streams
 
-EXPOSE 6865 10011
+EXPOSE 6865 7575 10011
 
 ENTRYPOINT ["/canton/bin/canton-entrypoint.sh"]

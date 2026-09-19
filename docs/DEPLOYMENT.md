@@ -110,6 +110,11 @@ node packages/proxy/dist/index.js
 | `PROXY_JWT_AUDIENCE`        | (none)                          | Expected JWT audience; required in jwt mode unless explicitly acknowledged with `PROXY_ALLOW_ANY_AUDIENCE=true` |
 | `PROXY_SERVICE_TOKEN`       | (none)                          | Service JWT for finalize / auto-withdraw routes                |
 | `PROXY_ESCROW_OPERATOR`     | (none)                          | Escrow-operator party id                                       |
+| `PROXY_DISTRIBUTION_OPERATOR` | `PROXY_ESCROW_OPERATOR`       | Hosted service party that signs distribution schedule records  |
+| `DISTRIBUTION_REGISTRY_API_URL` | `REGISTRY_API_URL`          | V2 token registry base, such as the bare CC Scan host           |
+| `DISTRIBUTION_REGISTRY_TOKEN` | (none)                         | Optional bearer token for registries that require authentication |
+| `V2_ALLOCATION_FACTORY_INTERFACE_ID` | package-name reference    | Optional explicit AllocationFactory interface override         |
+| `V2_SETTLEMENT_FACTORY_INTERFACE_ID` | package-name reference    | Optional explicit SettlementFactory interface override         |
 | `ESCROW_DISCLOSED_CUSTODY`  | `false`                         | Set `true` to knowingly run the operator-custodial money-leg when the payer is co-hosted on the operator participant |
 | `ESCROW_MAX_TOTAL_CC`       | `0` (uncapped)                  | Aggregate custody cap; deposits past it are rejected with `escrow_cap_exceeded` |
 | `ESCROW_SOLVENCY_MONITOR_SECONDS` | `0` (streamer tick)       | Cadence override for the pool-vs-owed drift monitor (`escrow_solvency_drift`); the monitor always runs when the escrow lane is enabled, `0` uses the escrow-streamer tick cadence (10s floor) |

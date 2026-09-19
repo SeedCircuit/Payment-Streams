@@ -138,6 +138,8 @@ import {
   ensureEscrowPreapproval,
 } from './escrow.js';
 import {
+  DEFAULT_DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID,
+  DEFAULT_DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID,
   activateDistributionViaJson,
   calculateDistributionAccruedGross,
   changeDistributionStateViaJson,
@@ -185,9 +187,11 @@ const DISTRIBUTION_REGISTRY_API_URL = (
   ''
 ).replace(/\/+$/, '');
 const DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID =
-  process.env['V2_ALLOCATION_FACTORY_INTERFACE_ID']?.trim() ?? '';
+  process.env['V2_ALLOCATION_FACTORY_INTERFACE_ID']?.trim() ||
+  DEFAULT_DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID;
 const DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID =
-  process.env['V2_SETTLEMENT_FACTORY_INTERFACE_ID']?.trim() ?? '';
+  process.env['V2_SETTLEMENT_FACTORY_INTERFACE_ID']?.trim() ||
+  DEFAULT_DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID;
 
 /**
  * V1 transfer-instruction lane service — ports the proven settle/create logic
@@ -2197,11 +2201,11 @@ app.post('/api/distributions/:contractId/prepare-funding', async (req, res) => {
         'The current allocation runway must be exhausted before another allocation is funded',
       );
     }
-    if (!DISTRIBUTION_REGISTRY_API_URL || !DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID) {
+    if (!DISTRIBUTION_REGISTRY_API_URL) {
       throw new AuthError(
         503,
         'distribution_registry_not_configured',
-        'Distribution funding requires DISTRIBUTION_REGISTRY_API_URL and V2_ALLOCATION_FACTORY_INTERFACE_ID',
+        'Distribution funding requires DISTRIBUTION_REGISTRY_API_URL or REGISTRY_API_URL',
       );
     }
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -2384,11 +2388,11 @@ app.post('/api/distributions/:contractId/prepare-recipient-authorization', async
         'The reconciled payer allocation has no settlement deadline',
       );
     }
-    if (!DISTRIBUTION_REGISTRY_API_URL || !DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID) {
+    if (!DISTRIBUTION_REGISTRY_API_URL) {
       throw new AuthError(
         503,
         'distribution_registry_not_configured',
-        'Recipient authorization requires DISTRIBUTION_REGISTRY_API_URL and V2_ALLOCATION_FACTORY_INTERFACE_ID',
+        'Recipient authorization requires DISTRIBUTION_REGISTRY_API_URL or REGISTRY_API_URL',
       );
     }
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -2499,11 +2503,11 @@ app.post('/api/distributions/:contractId/activate', async (req, res) => {
 app.post('/api/distributions/:contractId/prepare-settlement', async (req, res) => {
   try {
     await authorizeRequest(req, 'finalize', authConfig);
-    if (!DISTRIBUTION_REGISTRY_API_URL || !DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID) {
+    if (!DISTRIBUTION_REGISTRY_API_URL) {
       throw new AuthError(
         503,
         'distribution_registry_not_configured',
-        'Distribution settlement requires DISTRIBUTION_REGISTRY_API_URL and V2_SETTLEMENT_FACTORY_INTERFACE_ID',
+        'Distribution settlement requires DISTRIBUTION_REGISTRY_API_URL or REGISTRY_API_URL',
       );
     }
     const contractId = requireId(req.params['contractId'], 'contractId');
@@ -3045,6 +3049,15 @@ app.get('/api/health', (_req, res) => {
   res.json({
     status: startupReadiness?.status === 'degraded' ? 'degraded' : 'ok',
     canton: { host: CANTON_HOST, port: CANTON_PORT },
+    distributions: {
+      configured: Boolean(DISTRIBUTION_OPERATOR && DISTRIBUTION_REGISTRY_API_URL),
+      operatorConfigured: Boolean(DISTRIBUTION_OPERATOR),
+      registryConfigured: Boolean(DISTRIBUTION_REGISTRY_API_URL),
+      registryAuthentication: process.env['DISTRIBUTION_REGISTRY_TOKEN'] ? 'bearer' : 'none',
+      allocationFactoryInterfaceId: DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID,
+      settlementFactoryInterfaceId: DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID,
+      streamsPackageId: process.env['CANTON_STREAMS_PACKAGE_ID'] ?? null,
+    },
     readiness: startupReadiness,
   });
 });

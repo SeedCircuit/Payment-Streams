@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  DEFAULT_DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID,
+  DEFAULT_DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID,
   buildDistributionCreateArguments,
   calculateDistributionAccruedGross,
   decodeDistributionRecord,
@@ -9,6 +11,17 @@ import {
   prepareDistributionRecipientAuthorization,
   prepareDistributionSettlement,
 } from '../dist/distribution.js';
+
+test('uses stable V2 package-name references for factory interfaces', () => {
+  assert.equal(
+    DEFAULT_DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID,
+    '#splice-api-token-allocation-instruction-v2:Splice.Api.Token.AllocationInstructionV2:AllocationFactory',
+  );
+  assert.equal(
+    DEFAULT_DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID,
+    '#splice-api-token-allocation-v2:Splice.Api.Token.AllocationV2:SettlementFactory',
+  );
+});
 
 const input = {
   streamId: 'distribution-1',

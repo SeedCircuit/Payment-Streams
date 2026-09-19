@@ -18,8 +18,9 @@ services:
       - ../packages/daml:/daml-packages:ro
     environment:
       - CANTON_LOG_LEVEL=INFO
+      - CANTON_JSON_API_PORT=7575
     healthcheck:
-      test: ['CMD-SHELL', 'bash -lc "echo > /dev/tcp/127.0.0.1/6865"']
+      test: ['CMD-SHELL', 'bash -lc "echo > /dev/tcp/127.0.0.1/6865 && echo > /dev/tcp/127.0.0.1/7575"']
       interval: 10s
       timeout: 5s
       retries: 10
@@ -40,6 +41,7 @@ services:
       - PROXY_PORT=4000
       - CANTON_HOST=canton
       - CANTON_PORT=6865
+      - CANTON_JSON_API_URL=${CANTON_JSON_API_URL:-http://canton:7575}
       # Main package id from the Docker-built canton-streams DAR.
       # Required because Ledger API gRPC template identifiers use package hashes.
       - CANTON_STREAMS_PACKAGE_ID=417674c4a46e9e4c8e1dea526174e71fca3284c0aefb453ae3730876972dd292
@@ -50,7 +52,10 @@ services:
       - PROXY_AUTH_MODE=dev
       - PROXY_ALLOW_DEV_AUTH=true
       - ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      - PROXY_ESCROW_OPERATOR=${PROXY_ESCROW_OPERATOR:-}
+      - PROXY_SERVICE_TOKEN=${PROXY_SERVICE_TOKEN:-}
       - PROXY_DISTRIBUTION_OPERATOR=${PROXY_DISTRIBUTION_OPERATOR:-}
+      - REGISTRY_API_URL=${REGISTRY_API_URL:-}
       - DISTRIBUTION_REGISTRY_API_URL=${DISTRIBUTION_REGISTRY_API_URL:-}
       - DISTRIBUTION_REGISTRY_TOKEN=${DISTRIBUTION_REGISTRY_TOKEN:-}
       - V2_ALLOCATION_FACTORY_INTERFACE_ID=${V2_ALLOCATION_FACTORY_INTERFACE_ID:-}

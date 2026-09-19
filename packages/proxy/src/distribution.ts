@@ -22,6 +22,10 @@ import { listActiveContractsViaJson } from './v2-read.js';
 
 export const DISTRIBUTION_STREAM_TID =
   '#canton-streams:CantonStreams.Stream.DistributionStream:DistributionStreamRecord';
+export const DEFAULT_DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID =
+  '#splice-api-token-allocation-instruction-v2:Splice.Api.Token.AllocationInstructionV2:AllocationFactory';
+export const DEFAULT_DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID =
+  '#splice-api-token-allocation-v2:Splice.Api.Token.AllocationV2:SettlementFactory';
 
 export interface CreateDistributionInput {
   readonly streamId: string;

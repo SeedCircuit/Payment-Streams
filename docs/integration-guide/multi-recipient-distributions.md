@@ -75,13 +75,25 @@ not bundled with this initial reference slice.
 ```env
 PROXY_DISTRIBUTION_OPERATOR=Operator::1220...
 DISTRIBUTION_REGISTRY_API_URL=https://scan.example.com
-DISTRIBUTION_REGISTRY_TOKEN=
-V2_ALLOCATION_FACTORY_INTERFACE_ID=<package-id>:Splice.Api.Token.AllocationInstructionV2:AllocationFactory
-V2_SETTLEMENT_FACTORY_INTERFACE_ID=<package-id>:Splice.Api.Token.AllocationV2:SettlementFactory
 ```
 
-Resolve interface package ids from the target network rather than committing
-one network's hashes to application code.
+`PROXY_DISTRIBUTION_OPERATOR` may be omitted when `PROXY_ESCROW_OPERATOR`
+already names the service party hosted by this participant. It is the
+non-custodial schedule operator, not the V1 `ESCROW_PARTY`; using the same party
+is optional.
+
+The proxy defaults to stable package-name references for the V2 allocation and
+settlement interfaces. `V2_ALLOCATION_FACTORY_INTERFACE_ID` and
+`V2_SETTLEMENT_FACTORY_INTERFACE_ID` are optional overrides for deployments
+that require explicit package ids. `DISTRIBUTION_REGISTRY_TOKEN` is also
+optional and should remain unset for a public registry such as CC Scan. Set it
+only when the selected asset registry requires bearer authentication.
+
+The participant hosting the operator must upload and vet
+`packages/daml/main/.daml/dist/canton-streams-1.4.0.dar`. Its main package id is
+`417674c4a46e9e4c8e1dea526174e71fca3284c0aefb453ae3730876972dd292`.
+The payer and destination participants do not need the Streams DAR because
+their wallets exercise only standard V2 token interfaces.
 
 ## Create A Distribution
 
