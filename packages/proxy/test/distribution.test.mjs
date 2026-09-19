@@ -11,7 +11,7 @@ import {
   prepareDistributionRecipientAuthorization,
   prepareDistributionSettlement,
 } from '../dist/distribution.js';
-import { AuthError } from '../dist/auth.js';
+import { AuthError, enforceRole } from '../dist/auth.js';
 import { requireNonEmptyObject } from '../dist/validation.js';
 
 test('rejects an empty distribution request body as invalid input', () => {
@@ -21,6 +21,17 @@ test('rejects an empty distribution request body as invalid input', () => {
       error instanceof AuthError &&
       error.statusCode === 400 &&
       error.reason === 'invalid_input',
+  );
+});
+
+test('accepts only the selected distribution receiver as recipient', () => {
+  assert.doesNotThrow(() =>
+    enforceRole('Supplier::abcdef12', 'recipient', undefined, 'Supplier::abcdef12'),
+  );
+  assert.throws(
+    () => enforceRole('Other::abcdef12', 'recipient', undefined, 'Supplier::abcdef12'),
+    (error) =>
+      error instanceof AuthError && error.statusCode === 403 && error.reason === 'role_mismatch',
   );
 });
 

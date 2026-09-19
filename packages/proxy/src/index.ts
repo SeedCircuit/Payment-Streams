@@ -2373,7 +2373,7 @@ app.post('/api/distributions/:contractId/prepare-recipient-authorization', async
     }
     const body = (req.body ?? {}) as Record<string, unknown>;
     const receiverAccount = parseDistributionAccount(body['receiverAccount'], 'receiverAccount');
-    enforceRole(auth.party, 'recipient', receiverAccount.owner);
+    enforceRole(auth.party, 'recipient', undefined, receiverAccount.owner);
     const configured = configuredDistributionReceiverAccounts(record).some((account) =>
       sameDistributionAccount(account, receiverAccount),
     );
