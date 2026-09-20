@@ -65,10 +65,8 @@ export const TI_INTERFACE_NAME_V2 =
   '#splice-api-token-transfer-instruction-v2:Splice.Api.Token.TransferInstructionV2:TransferInstruction';
 
 // ---------------------------------------------------------------------------
-// Configuration (V1 lane env — see the task's envAndIds spec)
+// Configuration
 // ---------------------------------------------------------------------------
-
-const env = (k: string, d = ''): string => String(process.env[k] ?? d).trim();
 
 export interface V1LaneConfig {
   /** JSON Ledger API v2 base of the participant hosting the payer party. */
@@ -249,6 +247,7 @@ export type ArrearsPolicy = 'catch-up' | 'skip-missed';
 export interface V1Agreement {
   agreementId: string;
   appId?: string;
+  externalRef?: string;
   payerParty: string;
   recipientParty: string;
   ratePerPeriod: string;
@@ -1492,6 +1491,7 @@ function streamMeta(agreement: V1Agreement, ref: string): { values: Record<strin
       'cantonstreams.dev/v': '1',
       ...(agreement.appId ? { 'cantonstreams.dev/app': agreement.appId } : {}),
       'cantonstreams.dev/agreement': agreement.agreementId,
+      ...(agreement.externalRef ? { 'cantonstreams.dev/external-ref': agreement.externalRef } : {}),
     },
   };
 }
@@ -2439,6 +2439,7 @@ function updateIdRecordedElsewhere(store: V1Store, streamId: string, updateId: s
 export interface CreateV1StreamInput {
   streamId?: string;
   appId?: string;
+  externalRef?: string;
   payerParty: string;
   recipientParty: string;
   /** Amount accrued per cadence period (decimal string). Alias: amount. */
@@ -2646,6 +2647,7 @@ export class V1LaneService {
     const agreement: V1Agreement = {
       agreementId: streamId,
       ...(input.appId ? { appId: input.appId } : {}),
+      ...(input.externalRef ? { externalRef: input.externalRef } : {}),
       payerParty: input.payerParty,
       recipientParty: input.recipientParty,
       ratePerPeriod,

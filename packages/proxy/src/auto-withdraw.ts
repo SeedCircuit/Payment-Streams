@@ -31,6 +31,7 @@ import {
   type WalletSigningCredentials,
 } from './host-wallet.js';
 import { SettlementJournal } from './settlement-journal.js';
+import { assertMainnetSigningProviderSafe } from './mainnet.js';
 
 export interface AutoWithdrawConfig {
   readonly enabled: boolean;
@@ -1575,6 +1576,7 @@ async function submitWithdrawViaSigningProvider(
 ): Promise<void> {
   const resolver = await getOrInitSigningResolver();
   const provider = await resolver.forParty(args.escrowOperator);
+  assertMainnetSigningProviderSafe(process.env, provider.kind);
   const params: GatewayPrepareExecuteParams = {
     commandId: args.commandId,
     commands: [

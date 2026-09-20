@@ -18,11 +18,8 @@
 const JSON_API = (process.env['CANTON_JSON_API_URL'] ?? 'http://127.0.0.1:7575').replace(/\/+$/, '');
 const LEDGER_TOKEN = process.env['CANTON_LEDGER_TOKEN'];
 
-// canton-streams template name-refs (resolve to the vetted 1.1.0 package).
 const STREAM_ADMIN_TID = '#canton-streams:CantonStreams.Stream.StreamAdmin:StreamAdmin';
 const STREAM_ESCROW_TID = '#canton-streams:CantonStreams.Stream.Escrow:StreamEscrow';
-// Deployed 1.1.0 carries StreamFlowAdmin (observability-only, signatory sender);
-// the legacy StreamFlow template is queried too where it still exists.
 const STREAMFLOW_ADMIN_TID = '#canton-streams:CantonStreams.Stream.StreamFlowAdmin:StreamFlowAdmin';
 const STREAMFLOW_TID = '#canton-streams:CantonStreams.Stream.StreamFlow:StreamFlow';
 const CREATE_REQUEST_TID = '#canton-streams:CantonStreams.Workflow.CreateStream:CreateStreamRequest';

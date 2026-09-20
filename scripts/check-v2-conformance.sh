@@ -56,21 +56,8 @@ ALLOWED_FILES=(
   'docs/validation/usdcx-field-validation.md'
 )
 
-# ---------------------------------------------------------------------------
-# Scan
-# ---------------------------------------------------------------------------
-INCLUDES=(
-  '--include=*.md' '--include=*.ts' '--include=*.tsx'
-  '--include=*.js' '--include=*.mjs' '--include=*.daml'
-  '--include=*.json' '--include=*.yaml'
-)
-
-EXCLUDES=(
-  '--exclude-dir=node_modules'
-  '--exclude-dir=.git'
-  '--exclude-dir=.daml'
-  '--exclude-dir=.lib'
-  '--exclude-dir=dist'
+SOURCE_GLOBS=(
+  '*.md' '*.ts' '*.tsx' '*.js' '*.mjs' '*.daml' '*.json' '*.yaml'
 )
 
 fail=0
@@ -82,7 +69,7 @@ for entry in "${FORBIDDEN[@]}"; do
   pattern="${entry%%|*}"
   reason="${entry##*|}"
 
-  grep -rnE "$pattern" "${INCLUDES[@]}" "${EXCLUDES[@]}" . 2>/dev/null > "$tmp_hits" || true
+  git grep -nE "$pattern" -- "${SOURCE_GLOBS[@]}" > "$tmp_hits" || true
 
   if [ ! -s "$tmp_hits" ]; then
     continue

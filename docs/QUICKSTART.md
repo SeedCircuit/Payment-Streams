@@ -61,6 +61,11 @@ pnpm daml:build           # builds packages/daml/main/.daml/dist/canton-streams-
 pnpm dev
 ```
 
+These commands produce local test artifacts. For TestNet or MainNet, build
+against the exact official Token Standard DARs already vetted on the target
+network using `pnpm daml:build:network`; see the
+[Deployment Guide](DEPLOYMENT.md#1-daml-packages).
+
 ## Connect a wallet
 
 The dashboard uses [CIP-103](https://github.com/canton-foundation/cips/blob/main/cip-0103/cip-0103.md) for end-user wallet authentication via `@canton-network/dapp-sdk`. New stream flows target the **CIP-56 V2 / CIP-0112 AllocationRequest** path and should be tested with the Amulet wallet on a Splice LocalNet with V2 wallet support.

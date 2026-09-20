@@ -9,6 +9,8 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "build": "tsc",
+    "test": "node --test test/*.test.mjs",
+    "lint": "eslint src/",
     "clean": "rm -rf dist"
   },
   "dependencies": {

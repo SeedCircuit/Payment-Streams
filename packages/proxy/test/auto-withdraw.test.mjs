@@ -729,6 +729,8 @@ test('executeInteractiveWithdraw auto-accepts the recipient pending transfer bef
     if (url.endsWith('/api/wallet-gateway/prepare-action') && body?.action === 'transfer_accept') {
       return new Response(JSON.stringify({
         sessionId: 'wallet-session-accept',
+        action: 'transfer_accept',
+        payload: { contractId: body.payload.contractId },
         expectedPublicKey: rawPublicKeyBase64(recipientPrivateKeyPem),
         prepared: {
           preparedTransactionHash: Buffer.from('recipient-prepared-hash').toString('base64'),
@@ -1036,6 +1038,8 @@ test('executeInteractiveWithdraw falls back to transfer_accept when host-wallet 
     if (url.endsWith('/api/wallet-gateway/prepare-action') && body?.action === 'transfer_accept') {
       return new Response(JSON.stringify({
         sessionId: 'wallet-session-accept',
+        action: 'transfer_accept',
+        payload: { contractId: body.payload.contractId },
         expectedPublicKey: rawPublicKeyBase64(recipientPrivateKeyPem),
         prepared: {
           preparedTransactionHash: Buffer.from('recipient-prepared-hash').toString('base64'),
@@ -1159,6 +1163,8 @@ test('executeInteractiveWithdraw reuses an existing recipient pending transfer b
     if (url.endsWith('/api/wallet-gateway/prepare-action') && body?.action === 'transfer_accept') {
       return new Response(JSON.stringify({
         sessionId: 'wallet-session-accept',
+        action: 'transfer_accept',
+        payload: { contractId: body.payload.contractId },
         expectedPublicKey: rawPublicKeyBase64(recipientPrivateKeyPem),
         prepared: {
           preparedTransactionHash: Buffer.from('recipient-prepared-hash').toString('base64'),
@@ -1296,6 +1302,8 @@ test('executeInteractiveWithdraw reuses a smaller existing pending transfer befo
     if (url.endsWith('/api/wallet-gateway/prepare-action') && body?.action === 'transfer_accept') {
       return new Response(JSON.stringify({
         sessionId: 'wallet-session-accept',
+        action: 'transfer_accept',
+        payload: { contractId: body.payload.contractId },
         expectedPublicKey: rawPublicKeyBase64(recipientPrivateKeyPem),
         prepared: {
           preparedTransactionHash: Buffer.from('recipient-prepared-hash').toString('base64'),
@@ -1439,6 +1447,8 @@ test('executeInteractiveWithdraw reuses the strongest recoverable pending transf
     if (url.endsWith('/api/wallet-gateway/prepare-action') && body?.action === 'transfer_accept') {
       return new Response(JSON.stringify({
         sessionId: 'wallet-session-accept',
+        action: 'transfer_accept',
+        payload: { contractId: body.payload.contractId },
         expectedPublicKey: rawPublicKeyBase64(recipientPrivateKeyPem),
         prepared: {
           preparedTransactionHash: Buffer.from('recipient-prepared-hash').toString('base64'),

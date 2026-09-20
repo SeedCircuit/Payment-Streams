@@ -17,6 +17,8 @@ import { useAssets } from '../hooks/useAssets.js';
 import { useCantonCoinBalance } from '../hooks/useCantonCoinBalance.js';
 import { PageHeader } from '../components/common/index.js';
 import { fmtCc, displayName } from '../lib/format.js';
+import { getStoredExternalRef, clearStoredExternalRef } from '../lib/externalRef.js';
+import { ExternalRefBadge } from '../components/common/ExternalRefBadge.js';
 
 const CADENCES = [
   { label: 'Every minute', seconds: 60 },
@@ -51,11 +53,13 @@ export function CreateEscrowPage() {
   async function submit() {
     setError(null);
     try {
+      const externalRef = getStoredExternalRef();
       const escrow = await createEscrow.mutateAsync({
         recipient: recipient.trim(),
         ratePerCycle: String(rateNum),
         cadenceSeconds,
         totalDeposit: String(depositNum),
+        ...(externalRef ? { externalRef } : {}),
         ...(assetKey && assetKey !== 'cc'
           ? {
               assetKey,
@@ -65,6 +69,7 @@ export function CreateEscrowPage() {
             }
           : {}),
       });
+      if (externalRef) clearStoredExternalRef();
       navigate(`/v1/escrows/${encodeURIComponent(escrow.escrowId)}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -107,6 +112,8 @@ export function CreateEscrowPage() {
           <Link to="/v1/create" style={{ color: 'var(--accent)' }}>direct-delivery stream</Link> instead.
         </div>
       </div>
+
+      <ExternalRefBadge />
 
       <div className="card" style={{ padding: 20, display: 'grid', gap: 16 }}>
         <Field label="From (you)">
