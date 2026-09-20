@@ -26,18 +26,23 @@ const requiredTokenDars = [
 ];
 
 function parseArgs(argv) {
-  const args = { officialDir: '', interfacesDar: '', outputDir: resolve(root, 'dist/network') };
+  const args = { network: '', officialDir: '', interfacesDar: '', outputDir: '' };
   for (let index = 2; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === '--') continue;
-    if (value === '--official-dir') args.officialDir = argv[++index] ?? '';
+    if (value === '--network') args.network = (argv[++index] ?? '').toLowerCase();
+    else if (value === '--official-dir') args.officialDir = argv[++index] ?? '';
     else if (value === '--interfaces-dar') args.interfacesDar = argv[++index] ?? '';
     else if (value === '--output-dir') args.outputDir = resolve(argv[++index] ?? '');
     else throw new Error(`Unknown argument: ${value}`);
   }
+  if (args.network !== 'testnet' && args.network !== 'mainnet') {
+    throw new Error('--network must be testnet or mainnet');
+  }
   if (!args.officialDir) throw new Error('--official-dir is required');
   args.officialDir = resolve(args.officialDir);
   if (args.interfacesDar) args.interfacesDar = resolve(args.interfacesDar);
+  if (!args.outputDir) args.outputDir = resolve(root, 'dist/network', args.network);
   return args;
 }
 
@@ -166,13 +171,14 @@ verifyDependencySet(inspected, expectedDependencies);
 mkdirSync(args.outputDir, { recursive: true });
 const outputDar = resolve(
   args.outputDir,
-  `canton-streams-1.4.0-${streamsPackage.packageId.slice(0, 12)}.dar`,
+  `canton-streams-${args.network}-1.4.0-${streamsPackage.packageId.slice(0, 12)}.dar`,
 );
 copyFileSync(builtDar, outputDar);
 writeFileSync(
   `${outputDar}.json`,
   `${JSON.stringify(
     {
+      targetNetwork: args.network,
       package: { ...streamsPackage, sha256: sha256(outputDar) },
       dependencies: expectedDependencies,
     },

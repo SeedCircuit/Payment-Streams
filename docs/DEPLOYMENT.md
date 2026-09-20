@@ -55,6 +55,7 @@ package id, then run:
 
 ```bash
 pnpm daml:build:network -- \
+  --network mainnet \
   --official-dir /path/to/target-validator/dars \
   --interfaces-dar /path/to/vetted/canton-streams-interfaces-1.0.0.dar
 pnpm daml:upgrade-check
@@ -62,7 +63,8 @@ pnpm daml:upgrade-check
 
 The command checks the four direct official Token Standard dependencies,
 builds `canton-streams` against their exact package ids, and writes the
-deployable DAR plus a dependency manifest to `dist/network/`. If the Streams
+deployable DAR plus a dependency manifest to `dist/network/<network>/`. Use
+`--network testnet` for TestNet; never reuse that artifact for MainNet. If the Streams
 interfaces package has never been vetted on that participant, omit
 `--interfaces-dar`; the command builds it and it must be uploaded and vetted
 with the main package. The upgrade check reconstructs the deployed 1.3.0
@@ -78,7 +80,7 @@ DALF files.
 
 ```bash
 # Via Canton Admin API (gRPC)
-DAR=dist/network/canton-streams-1.4.0-<package-id-prefix>.dar
+DAR=dist/network/mainnet/canton-streams-mainnet-1.4.0-<package-id-prefix>.dar
 B64=$(base64 < "$DAR" | tr -d '\n')
 printf '{"dars":[{"bytes":"%s"}],"vet_all_packages":false,"synchronize_vetting":true}' "$B64" > /tmp/streams-upload.json
 grpcurl -plaintext -max-msg-sz 104857600 \
@@ -89,7 +91,7 @@ grpcurl -plaintext -max-msg-sz 104857600 \
 # Or via the daml CLI
 daml ledger upload-dar \
   --host localhost --port 5001 \
-  dist/network/canton-streams-1.4.0-<package-id-prefix>.dar
+  dist/network/mainnet/canton-streams-mainnet-1.4.0-<package-id-prefix>.dar
 ```
 
 **Vet the package on the synchronizer:**
@@ -138,8 +140,12 @@ node packages/proxy/dist/index.js
 
 **Required environment variables (production):**
 
+Set `PROXY_DEPLOYMENT_TARGET=mainnet` for MainNet. This activates the mandatory
+startup checks documented in [MainNet readiness](./MAINNET-READINESS.md).
+
 | Variable                    | Default                         | Description                                                    |
 | --------------------------- | ------------------------------- | -------------------------------------------------------------- |
+| `PROXY_DEPLOYMENT_TARGET`   | (none)                          | Set `mainnet` to enforce the fail-closed MainNet startup profile |
 | `PROXY_PORT`                | `4000`                          | Proxy listen port                                              |
 | `CANTON_HOST`               | `localhost`                     | Canton ledger API host                                         |
 | `CANTON_PORT`               | `5001`                          | Canton ledger API gRPC port                                    |

@@ -458,6 +458,7 @@ export function buildDistributionRecipientAllocationFactoryPlan(
       authorizer: params.receiverAccount,
       transferLegSides,
       settlementDeadline: params.settlementDeadline,
+      nextIterationFunding: {},
       committed: params.committed ?? false,
       allocationMeta: params.meta,
       requestedAt: params.requestedAt,
@@ -511,6 +512,8 @@ export function buildDistributionSettlementFactoryPlan(
         },
         ...params.recipientAuthorizations.map((authorization) => ({
           allocationCid: authorization.allocationCid,
+          nextIterationFunding:
+            params.nextIterationFunding === undefined ? undefined : { amounts: {} },
         })),
       ],
       actors: params.actors ?? params.settlement.executors ?? [params.settlement.executor],

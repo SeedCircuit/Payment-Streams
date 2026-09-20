@@ -65,10 +65,8 @@ export const TI_INTERFACE_NAME_V2 =
   '#splice-api-token-transfer-instruction-v2:Splice.Api.Token.TransferInstructionV2:TransferInstruction';
 
 // ---------------------------------------------------------------------------
-// Configuration (V1 lane env — see the task's envAndIds spec)
+// Configuration
 // ---------------------------------------------------------------------------
-
-const env = (k: string, d = ''): string => String(process.env[k] ?? d).trim();
 
 export interface V1LaneConfig {
   /** JSON Ledger API v2 base of the participant hosting the payer party. */

@@ -90,6 +90,7 @@ import {
   runStartupReadinessChecks,
   type ReadinessReport,
 } from './readiness.js';
+import { assertMainnetConfigSafe } from './mainnet.js';
 import {
   parseAutoWithdrawConfig,
   runTokenStandardAutoWithdrawCycle,
@@ -2291,7 +2292,6 @@ app.post('/api/distributions/:contractId/prepare-funding', async (req, res) => {
         settleBefore: settlementDeadline,
         meta: {
           'cantonstreams.dev/stream-id': record.streamId,
-          'cantonstreams.dev/distribution-record': record.contractId,
         },
       },
       settlementDeadline,
@@ -2304,6 +2304,7 @@ app.post('/api/distributions/:contractId/prepare-funding', async (req, res) => {
       meta: {
         'cantonstreams.dev/stream-id': record.streamId,
         'cantonstreams.dev/funding-id': fundingId,
+        'cantonstreams.dev/distribution-record': record.contractId,
       },
     });
     res.json(serializeForJson({ ...prepared, fundingId, grossAmount }));
@@ -2424,7 +2425,6 @@ app.post('/api/distributions/:contractId/prepare-recipient-authorization', async
         settleBefore: settlementDeadline,
         meta: {
           'cantonstreams.dev/stream-id': record.streamId,
-          'cantonstreams.dev/distribution-record': record.contractId,
         },
       },
       settlementDeadline,
@@ -2435,6 +2435,7 @@ app.post('/api/distributions/:contractId/prepare-recipient-authorization', async
       meta: {
         'cantonstreams.dev/stream-id': record.streamId,
         'cantonstreams.dev/recipient-authorization-id': authorizationId,
+        'cantonstreams.dev/distribution-record': record.contractId,
       },
     });
     res.json(serializeForJson({ ...prepared, authorizationId, receiverAccount }));
@@ -2544,7 +2545,6 @@ app.post('/api/distributions/:contractId/prepare-settlement', async (req, res) =
         requestedAt: settledAt,
         meta: {
           'cantonstreams.dev/stream-id': record.streamId,
-          'cantonstreams.dev/distribution-record': record.contractId,
         },
       },
       allocationCid: record.currentAllocationCid,
@@ -3065,6 +3065,7 @@ async function start(): Promise<void> {
   }
 
   const readinessConfig = createReadinessConfig(process.env, authConfig.serviceToken ?? undefined);
+  assertMainnetConfigSafe(process.env, authConfig, readinessConfig);
   startupReadiness = await runStartupReadinessChecks(readinessConfig);
 
   if (startupReadiness.status === 'degraded') {

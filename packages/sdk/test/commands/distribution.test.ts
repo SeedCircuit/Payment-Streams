@@ -274,7 +274,7 @@ describe('buildDistributionRecipientAllocationFactoryPlan', () => {
             amount: '616.4370000000',
           },
         ],
-        nextIterationFunding: null,
+        nextIterationFunding: {},
       },
       inputHoldingCids: [],
       actors: ['supplier'],
@@ -359,16 +359,46 @@ describe('buildDistributionSettlementFactoryPlan', () => {
         {
           allocationCid: 'supplier-allocation-cid',
           extraTransferLegSides: [],
-          nextIterationFunding: null,
+          nextIterationFunding: {},
         },
         {
           allocationCid: 'platform-allocation-cid',
           extraTransferLegSides: [],
-          nextIterationFunding: null,
+          nextIterationFunding: {},
         },
       ],
       actors: ['operator'],
       extraArgs: { context: { values: { rules: 'rules-cid' } } },
+    });
+  });
+
+  it('terminates payer and recipient allocations after the final funded period', () => {
+    const result = buildDistributionSettlementFactoryPlan({
+      payerAccount: { owner: 'consumer', id: '' },
+      instrumentId: { admin: 'cc-admin', id: 'Amulet' },
+      grossAmount: '684.93',
+      grossAmountPerPeriod: '684.93',
+      legs: percentageLegs,
+      settlement: {
+        executor: 'operator',
+        settlementRefId: 'distribution-001:funding-1',
+        requestedAt: new Date('2026-01-08T00:00:00Z'),
+      },
+      allocationCid: 'allocation-cid-1',
+      recipientAuthorizations: [
+        {
+          receiver: { owner: 'supplier', id: '' },
+          authorizationId: 'supplier-authorization',
+          allocationCid: 'supplier-allocation-cid',
+        },
+      ],
+    });
+
+    expect(result.choiceArguments).toMatchObject({
+      allocations: [
+        { allocationCid: 'allocation-cid-1', nextIterationFunding: null },
+        { allocationCid: 'supplier-allocation-cid', nextIterationFunding: null },
+      ],
     });
   });
 });

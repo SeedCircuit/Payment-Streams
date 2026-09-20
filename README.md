@@ -321,7 +321,7 @@ Run the main checks:
 pnpm --filter @canton-streams/sdk test
 pnpm --filter @canton-streams/dashboard test
 pnpm --filter @canton-streams/proxy build
-node --test packages/proxy/test/distribution.test.mjs
+pnpm --filter @canton-streams/proxy test
 pnpm --filter @canton-streams/dashboard build
 bash scripts/check-v2-conformance.sh
 docker compose -f docker/docker-compose.yml config
@@ -354,6 +354,7 @@ participant.
 | Integrate into your dApp | [docs/integration-guide/README.md](docs/integration-guide/README.md) |
 | Understand the architecture | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Deploy safely | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Decide whether to launch on MainNet | [docs/MAINNET-READINESS.md](docs/MAINNET-READINESS.md) |
 | Operate in production | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
 | Review risks | [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) |
 | Check REST endpoints | [docs/API.md](docs/API.md) |

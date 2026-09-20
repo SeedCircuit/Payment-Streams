@@ -319,8 +319,8 @@ test('prepareDistributionSettlement builds an operator-only canonical batch sett
         next: allocation.nextIterationFunding,
       })),
       [
-        { cid: 'supplier-allocation-cid', next: null },
-        { cid: 'platform-allocation-cid', next: null },
+        { cid: 'supplier-allocation-cid', next: {} },
+        { cid: 'platform-allocation-cid', next: {} },
       ],
     );
   } finally {

@@ -70,13 +70,15 @@ mkdir -p /tmp/validator-dars
 docker cp $CID:/app/splice-node/dars/. /tmp/validator-dars/
 docker rm $CID
 pnpm daml:build:network -- \
+  --network mainnet \
   --official-dir /tmp/validator-dars \
   --interfaces-dar /path/to/vetted/canton-streams-interfaces-1.0.0.dar
 ```
 
 Omit `--interfaces-dar` only when the interfaces package has not previously
 been deployed. The generated DAR and dependency manifest are written to
-`dist/network/`.
+`dist/network/mainnet/`. Use `--network testnet` and the matching validator
+DARs when producing a TestNet artifact.
 
 App-level OAuth tokens are usually **not** participant admins (`403` on
 `/v2/packages`) — upload via the participant **admin API** instead, as the
@@ -84,7 +86,7 @@ validator operator (verified on MainNet):
 
 ```bash
 # on the validator host; participant admin port 5002
-B64=$(base64 -w0 dist/network/canton-streams-1.4.0-<package-id-prefix>.dar)
+B64=$(base64 -w0 dist/network/mainnet/canton-streams-mainnet-1.4.0-<package-id-prefix>.dar)
 printf '{"dars":[{"bytes":"%s"}],"vet_all_packages":false,"synchronize_vetting":true}' $B64 > /tmp/up.json
 docker run --rm --network host -i fullstorydev/grpcurl -plaintext -max-msg-sz 104857600 \
   -d @ <participant-ip>:5002 com.digitalasset.canton.admin.participant.v30.PackageService/UploadDar < /tmp/up.json

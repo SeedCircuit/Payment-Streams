@@ -352,6 +352,7 @@ participant.
 | Integrate into your dApp | [docs/integration-guide/README.md](./integration-guide/README.md) |
 | Understand the architecture | [docs/ARCHITECTURE.md](./ARCHITECTURE.md) |
 | Deploy safely | [docs/DEPLOYMENT.md](./DEPLOYMENT.md) |
+| Decide whether to launch on MainNet | [docs/MAINNET-READINESS.md](./MAINNET-READINESS.md) |
 | Operate in production | [docs/OPERATIONS.md](./OPERATIONS.md) |
 | Review risks | [docs/THREAT-MODEL.md](./THREAT-MODEL.md) |
 | Check REST endpoints | [docs/API.md](./API.md) |
