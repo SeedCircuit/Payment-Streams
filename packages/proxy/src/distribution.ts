@@ -100,6 +100,7 @@ export interface PrepareDistributionSettlementInput {
   readonly allocationCid: string;
   readonly recipientAuthorizations: ReadonlyArray<DistributionRecipientAuthorization>;
   readonly nextIterationFunding?: NextIterationFunding['amounts'] | undefined;
+  readonly recipientAllocationsRolled?: boolean | undefined;
   readonly registryApiUrl: string;
   readonly settlementFactoryInterfaceId: string;
   readonly registryToken?: string | undefined;
@@ -406,6 +407,7 @@ export async function prepareDistributionSettlement(
     allocationCid: input.allocationCid,
     recipientAuthorizations: input.recipientAuthorizations,
     nextIterationFunding: input.nextIterationFunding,
+    recipientAllocationsRolled: input.recipientAllocationsRolled,
     meta: input.meta,
   });
   const factory = await fetchSettlementFactory(
@@ -423,6 +425,7 @@ export async function prepareDistributionSettlement(
     allocationCid: input.allocationCid,
     recipientAuthorizations: input.recipientAuthorizations,
     nextIterationFunding: input.nextIterationFunding,
+    recipientAllocationsRolled: input.recipientAllocationsRolled,
     choiceContextValues: factory.choiceContext.values,
     meta: input.meta,
   });

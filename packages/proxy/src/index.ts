@@ -2585,6 +2585,7 @@ app.post('/api/distributions/:contractId/prepare-settlement', async (req, res) =
       allocationCid: record.currentAllocationCid,
       recipientAuthorizations: record.recipientAuthorizations,
       nextIterationFunding,
+      recipientAllocationsRolled: record.settlementCount > 0,
       registryApiUrl: registry.registryApiUrl,
       settlementFactoryInterfaceId: DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID,
       registryToken: registry.registryToken,

@@ -148,13 +148,6 @@ export default defineConfig({
           { text: 'Walkthroughs', link: '/WALKTHROUGHS' },
         ],
       },
-      {
-        text: 'Validation & Reports',
-        collapsed: false,
-        items: [
-          { text: 'USDCx Field Validation', link: '/validation/usdcx-field-validation' },
-        ],
-      },
     ],
 
     search: {

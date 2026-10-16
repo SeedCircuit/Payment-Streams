@@ -22,6 +22,7 @@ const ENV_KEYS = [
   'USDCX_REGISTRY_API_URL',
   'USDCX_TRANSFER_VERSION',
   'USDCX_HOLDING_TEMPLATE_ID',
+  'USDCX_OFFER_TEMPLATE_ID',
 ];
 
 function withEnv(values, fn) {
@@ -53,6 +54,29 @@ test('USDCx follows USDCX_TRANSFER_VERSION', () => {
   });
   withEnv({ ...deployment, USDCX_TRANSFER_VERSION: 'v1' }, () => {
     assert.equal(getSupportedAssets().find((a) => a.key === 'usdcx').transferVersion, 'v1');
+  });
+});
+
+test('USDCx offers default to the utility TransferOffer and follow USDCX_OFFER_TEMPLATE_ID', () => {
+  withEnv(deployment, () => {
+    const assets = getSupportedAssets();
+    assert.equal(
+      assets.find((a) => a.key === 'usdcx').offerTemplateId,
+      '#utility-registry-app-v0:Utility.Registry.App.V0.Model.Transfer:TransferOffer',
+    );
+    assert.equal(assets.find((a) => a.key === 'cc').offerTemplateId, '');
+  });
+  withEnv({ ...deployment, USDCX_OFFER_TEMPLATE_ID: ' #custom-registry:Custom.Transfer:Offer\n' }, () => {
+    assert.equal(
+      getSupportedAssets().find((a) => a.key === 'usdcx').offerTemplateId,
+      '#custom-registry:Custom.Transfer:Offer',
+    );
+  });
+  withEnv({ ...deployment, USDCX_OFFER_TEMPLATE_ID: '  ' }, () => {
+    assert.equal(
+      getSupportedAssets().find((a) => a.key === 'usdcx').offerTemplateId,
+      '#utility-registry-app-v0:Utility.Registry.App.V0.Model.Transfer:TransferOffer',
+    );
   });
 });
 

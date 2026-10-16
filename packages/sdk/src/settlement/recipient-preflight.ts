@@ -16,9 +16,6 @@
  *                 TransferPreapproval" before activating the stream.
  *   - `self`    → sender == receiver (probe/test topology).
  *
- * Field-validated on Canton MainNet 2026-06-10 (see
- * docs/reports/mainnet-external-stream-2026-06-10.md).
- *
  * Browser-safe: uses `fetch`, no Node-only dependencies.
  */
 

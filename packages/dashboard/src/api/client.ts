@@ -1165,9 +1165,13 @@ export class CantonStreamsApi {
   /** Recipient (wallet party NOT hosted on the proxy's participant, e.g. a Loop
    * party): build the TransferInstruction_Accept command + disclosures so the
    * caller's own wallet can sign and submit it. */
-  async prepareAcceptReceivedV1(transferInstructionCid: string): Promise<V1ReceivedPreparedAccept> {
+  async prepareAcceptReceivedV1(
+    transferInstructionCid: string,
+    instrumentId?: { readonly admin: string; readonly id: string },
+  ): Promise<V1ReceivedPreparedAccept> {
     return this.request<V1ReceivedPreparedAccept>('POST', '/api/v1/received/prepare-accept', {
       transferInstructionCid,
+      ...(instrumentId ? { instrumentId: { admin: instrumentId.admin, id: instrumentId.id } } : {}),
     });
   }
 }
@@ -1593,6 +1597,7 @@ export interface V1ReceivedPendingOffer {
   readonly amount: string;
   readonly sender: string;
   readonly instrumentId: string;
+  readonly instrumentAdmin?: string;
   readonly requestedAt?: string;
   readonly executeBefore?: string;
   /** True once the accept-by deadline has passed — Accept is no longer possible. */
@@ -1889,6 +1894,7 @@ export interface SupportedAsset {
   standard: string;
   note?: string;
   holdingTemplateId?: string;
+  offerTemplateId?: string;
   registryApiUrl?: string;
   transferVersion?: string;
   decimals?: number;

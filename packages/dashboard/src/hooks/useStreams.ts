@@ -15,9 +15,11 @@ import type {
 import type {
   V1CreateStreamParams,
   V1SettleParams,
+  V1ReceivedPendingOffer,
   StreamInstrument,
 } from '../api/client.js';
 import { useCantonClient } from './useCantonClient.js';
+import { useAssets } from './useAssets.js';
 import { useAuth } from '../store/auth.js';
 import { isHostedLedgerAvailable } from '../lib/hostedWalletLedger.js';
 import {
@@ -27,7 +29,11 @@ import {
   acceptTransferV1ViaWallet,
   withdrawTransferV1ViaWallet,
 } from '../lib/settleV1Wallet.js';
-import { listReceivedViaWallet, acceptReceivedViaWallet } from '../lib/receivedV1Wallet.js';
+import {
+  listReceivedViaWallet,
+  acceptReceivedViaWallet,
+  offerAcceptInstrument,
+} from '../lib/receivedV1Wallet.js';
 
 /**
  * Delay in ms before refetching after a mutation.
@@ -240,11 +246,13 @@ export function useReceivedV1() {
   // hosts it. `isHostedLedgerAvailable` only reports adapter capabilities, so gate
   // on `!devMode` to avoid routing a dev session to a dead wallet.
   const useWallet = !devMode && isHostedLedgerAvailable() && !!party;
+  const { data: assets, isFetched: assetsReady } = useAssets();
 
   return useQuery({
     queryKey: ['received-v1', useWallet ? `wallet:${party}` : 'proxy'],
-    queryFn: () => (useWallet ? listReceivedViaWallet(party!) : client!.listReceivedV1()),
-    enabled: !!client && (!useWallet || !!party),
+    queryFn: () =>
+      useWallet ? listReceivedViaWallet(party!, assets ?? []) : client!.listReceivedV1(),
+    enabled: !!client && (!useWallet || (!!party && assetsReady)),
     refetchInterval: 12_000,
   });
 }
@@ -258,13 +266,19 @@ export function useAcceptReceivedV1() {
   const client = useCantonClient();
   const queryClient = useQueryClient();
   const { party, devMode } = useAuth();
+  const { data: assets } = useAssets();
 
   return useMutation({
-    mutationFn: (transferInstructionCid: string) => {
+    mutationFn: (offer: V1ReceivedPendingOffer) => {
       if (!devMode && isHostedLedgerAvailable() && party) {
-        return acceptReceivedViaWallet(client!, party, transferInstructionCid);
+        return acceptReceivedViaWallet(
+          client!,
+          party,
+          offer.transferInstructionCid,
+          offerAcceptInstrument(offer, assets ?? []),
+        );
       }
-      return client!.acceptReceivedV1(transferInstructionCid);
+      return client!.acceptReceivedV1(offer.transferInstructionCid);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['received-v1'] });

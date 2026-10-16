@@ -401,6 +401,57 @@ describe('buildDistributionSettlementFactoryPlan', () => {
       ],
     });
   });
+
+  it('gives rolled recipient allocations their own receiver legs for the next period', () => {
+    const result = buildDistributionSettlementFactoryPlan({
+      payerAccount: { owner: 'consumer', id: '' },
+      instrumentId: { admin: 'cc-admin', id: 'Amulet' },
+      grossAmount: '684.93',
+      grossAmountPerPeriod: '684.93',
+      legs: percentageLegs,
+      settlement: {
+        executor: 'operator',
+        settlementRefId: 'distribution-001:funding-1',
+        requestedAt: new Date('2026-01-08T00:00:00Z'),
+      },
+      allocationCid: 'allocation-cid-2',
+      recipientAuthorizations: [
+        {
+          receiver: { owner: 'supplier', id: '' },
+          authorizationId: 'supplier-authorization',
+          allocationCid: 'supplier-allocation-cid-2',
+        },
+        {
+          receiver: { owner: 'platform', id: 'fees' },
+          authorizationId: 'platform-authorization',
+          allocationCid: 'platform-allocation-cid-2',
+        },
+      ],
+      nextIterationFunding: { Amulet: '684.93' },
+      recipientAllocationsRolled: true,
+    });
+
+    const payer = { owner: 'consumer', provider: null, id: '' };
+    expect(result.choiceArguments).toMatchObject({
+      allocations: [
+        { allocationCid: 'allocation-cid-2' },
+        {
+          allocationCid: 'supplier-allocation-cid-2',
+          extraTransferLegSides: [
+            { transferLegId: 'supplier', side: 'ReceiverSide', otherside: payer, amount: '616.4370000000' },
+          ],
+          nextIterationFunding: {},
+        },
+        {
+          allocationCid: 'platform-allocation-cid-2',
+          extraTransferLegSides: [
+            { transferLegId: 'facilitator', side: 'ReceiverSide', otherside: payer, amount: '68.4930000000' },
+          ],
+          nextIterationFunding: {},
+        },
+      ],
+    });
+  });
 });
 
 describe('recordDistributionSettlement', () => {

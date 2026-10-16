@@ -46,7 +46,7 @@ For each asset, you supply:
 | Key | Lane | Notes |
 |---|---|---|
 | `cc` (Canton Coin / Amulet) | V1 (transitional) | Instrument id `Amulet`; admin = DSO party (DA-docs reference value, network-specific — confirm via `GET {scan}/api/scan/v0/dso-party-id`, see entry `meta.adminResolution`). Registry API served by Scan. |
-| `usdcx` (USDCx) | V2 (V1 still served) | Instrument id `USDCx`; real per-network issuer admin + registry base URL from Circle xReserve / DA docs (TestNet in fields, MainNet in `meta.mainnet`). No transfer-preapproval API, so a direct transfer always lands as an offer the recipient accepts; use a [distribution](./multi-recipient-distributions.md) for recurring payments. Validation: [usdcx-field-validation.md](../validation/usdcx-field-validation.md). |
+| `usdcx` (USDCx) | V2 (V1 still served) | Instrument id `USDCx`; real per-network issuer admin + registry base URL from Circle xReserve / DA docs (TestNet in fields, MainNet in `meta.mainnet`). No transfer-preapproval API, so a direct transfer always lands as an offer the recipient accepts; use a [distribution](./multi-recipient-distributions.md) for recurring payments. |
 | `v2-test-asset` | V2 | DevNet-only probe asset. |
 
 The `cc`/`usdcx` entries carry the real published instrument ids, admin
@@ -218,6 +218,7 @@ Set the per-asset environment before starting the proxy:
 | `USDCX_INSTRUMENT_ID` | no | `USDCx` | Instrument id under that admin |
 | `USDCX_TRANSFER_VERSION` | no | `v1` | Token-standard transfer API version (`v1` / `v2`). USDCx serves both; set `v2`. Fixed per stream at creation. |
 | `USDCX_DECIMALS` | no | `6` | Display decimals (USDCx amounts are 10dp; set `10`) |
+| `USDCX_OFFER_TEMPLATE_ID` | no | `#utility-registry-app-v0:Utility.Registry.App.V0.Model.Transfer:TransferOffer` | Template of an incoming offer, which a wallet-hosted recipient's inbox reads from their own wallet |
 
 Both `USDCX_ADMIN_PARTY` **and** `USDCX_REGISTRY_API_URL` must be present, or the
 asset is omitted from the whitelist entirely — a stream is never created against
