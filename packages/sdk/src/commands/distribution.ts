@@ -152,6 +152,7 @@ export interface BuildDistributionSettlementFactoryParams {
   readonly allocationCid: string;
   readonly recipientAuthorizations: ReadonlyArray<DistributionRecipientAuthorization>;
   readonly nextIterationFunding?: NextIterationFundingAmounts | undefined;
+  readonly recipientAllocationsRolled?: boolean | undefined;
   readonly actors?: ReadonlyArray<string> | undefined;
   readonly choiceContextValues?: Readonly<Record<string, unknown>> | undefined;
   readonly meta?: Readonly<Record<string, string>> | undefined;
@@ -490,6 +491,17 @@ export function buildDistributionSettlementFactoryPlan(
     instrumentId: params.instrumentId.id,
     meta: leg.meta,
   }));
+  const receiverSides = (receiver: DistributionRecipientAuthorization['receiver']): TransferLegSideV2[] =>
+    params.legs
+      .filter((leg) => sameAccount(leg.receiver, receiver))
+      .map((leg) => ({
+        transferLegId: leg.legId,
+        side: 'ReceiverSide',
+        otherside: params.payerAccount,
+        amount: amountById.get(leg.legId)!,
+        instrumentId: params.instrumentId.id,
+        meta: leg.meta,
+      }));
   return {
     choiceArguments: buildSettlementFactorySettleBatchJson({
       settlement: params.settlement,
@@ -512,6 +524,9 @@ export function buildDistributionSettlementFactoryPlan(
         },
         ...params.recipientAuthorizations.map((authorization) => ({
           allocationCid: authorization.allocationCid,
+          ...(params.recipientAllocationsRolled
+            ? { extraTransferLegSides: receiverSides(authorization.receiver) }
+            : {}),
           nextIterationFunding:
             params.nextIterationFunding === undefined ? undefined : { amounts: {} },
         })),
