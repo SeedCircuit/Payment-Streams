@@ -49,11 +49,8 @@ ALLOWED_FILES=(
   'packages/daml/v1-shim/test/daml/Test/V1Shim/ReceiverClaimTest.daml'
   'scripts/devnet-v1-cc-stream-probe.mjs'
   'docs/V1-LANE-TESTING.md'
-  'docs/reports/first-dapp-integration-testnet.md'
-  'docs/reports/mainnet-external-stream-2026-06-10.md'
   # Docs that legitimately discuss the V1 lane / audit scope by name.
   'docs/AUDIT-SCOPE.md'
-  'docs/validation/usdcx-field-validation.md'
 )
 
 SOURCE_GLOBS=(

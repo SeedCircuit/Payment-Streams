@@ -18,8 +18,7 @@
  * unregistered payers is the sender party's namespace prefix.
  *
  * Stream contracts themselves are PRIVATE to their parties (Canton
- * privacy); only the asset legs are publicly visible — see
- * docs/reports/first-dapp-integration-testnet.md §10.
+ * privacy); only the asset legs are publicly visible.
  *
  * ## One-shot window
  *

@@ -274,11 +274,7 @@ Environment variables (from the probe's `config` block):
 **A reachable participant is required.** The probe submits with all
 three parties in `actAs` (co-hosted probe topology), so the
 `canton-streams` DAR must be uploaded and vetted and sender / recipient
-/ escrow operator must be hosted on the target participant. **No public
-live `StreamFlow` end-to-end run has been recorded yet** — the live E2E
-path needs a participant you can reach. (The prefunded path's live
-TestNet/MainNet runs are documented separately in
-`streams-integration.md`; those do not cover `StreamFlow`.)
+/ escrow operator must be hosted on the target participant.
 
 ---
 

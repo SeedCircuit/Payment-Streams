@@ -18,8 +18,6 @@
  *        cantonstreams.dev/{ref,app,agreement} metadata;
  *        then record on the on-ledger StreamAdmin via Sync_Iteration.
  *
- * Field-validated flow: docs/reports/mainnet-external-stream-2026-06-10.md.
- *
  * ## Agreements file (JSON)
  * {
  *   "agreements": [{
