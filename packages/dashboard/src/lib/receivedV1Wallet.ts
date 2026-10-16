@@ -8,8 +8,10 @@
  * egress), then the wallet signs and submits on its own participant.
  */
 import { queryActiveContracts, submitAndWait } from './hostedWalletLedger.js';
+import { accountParty } from './settleV1Wallet.js';
 import type {
   CantonStreamsApi,
+  SupportedAsset,
   V1ReceivedView,
   V1ReceivedPendingOffer,
   V1ReceivedAcceptResult,
@@ -60,39 +62,118 @@ function isWalletReadUnavailable(err: unknown): boolean {
   );
 }
 
-/** Pending incoming offers for a wallet party, read from the wallet's own ACS. */
-export async function listReceivedViaWallet(party: string): Promise<V1ReceivedView> {
-  const nowMs = Date.now();
-  let offers: Awaited<ReturnType<typeof queryActiveContracts>>;
+type WalletContract = Awaited<ReturnType<typeof queryActiveContracts>>[number];
+
+type ReceivedInstrument = { readonly admin: string; readonly id: string };
+
+function asRecord(v: unknown): Record<string, unknown> | undefined {
+  return v && typeof v === 'object' ? (v as Record<string, unknown>) : undefined;
+}
+
+function offerAssets(assets: readonly SupportedAsset[]): SupportedAsset[] {
+  return assets.filter((a) => !!a.offerTemplateId);
+}
+
+async function readWalletOffers(
+  templateIds: readonly string[],
+  party: string,
+): Promise<readonly WalletContract[] | undefined> {
   try {
-    offers = await queryActiveContracts([AMULET_TRANSFER_INSTRUCTION_TID], party);
+    return await queryActiveContracts(templateIds, party);
   } catch (err) {
-    if (isWalletReadUnavailable(err)) return { party, pending: [], received: [] };
+    if (isWalletReadUnavailable(err)) return undefined;
     throw err;
   }
-  const pending: V1ReceivedPendingOffer[] = offers
-    .map((c) => ({ c, tr: (c.createArguments['transfer'] ?? {}) as Record<string, unknown> }))
-    .filter(({ tr }) => tr['receiver'] === party)
-    .map(({ c, tr }) => {
-      const instr = tr['instrumentId'];
-      const executeBefore = (tr['executeBefore'] as string | undefined) ?? undefined;
-      return {
-        transferInstructionCid: c.contractId,
-        amount: String(tr['amount'] ?? '0'),
-        sender: String(tr['sender'] ?? ''),
-        instrumentId:
-          instr && typeof instr === 'object'
-            ? String((instr as Record<string, unknown>)['id'] ?? 'Amulet')
-            : String(instr ?? 'Amulet'),
-        requestedAt: (tr['requestedAt'] as string | undefined) ?? undefined,
-        executeBefore,
-        expired: !!executeBefore && Date.parse(executeBefore) < nowMs,
-      };
-    });
+}
+
+function ccOffer(c: WalletContract, nowMs: number): V1ReceivedPendingOffer {
+  const tr = (c.createArguments['transfer'] ?? {}) as Record<string, unknown>;
+  const instr = tr['instrumentId'];
+  const admin = asRecord(instr)?.['admin'];
+  const executeBefore = (tr['executeBefore'] as string | undefined) ?? undefined;
+  return {
+    transferInstructionCid: c.contractId,
+    amount: String(tr['amount'] ?? '0'),
+    sender: String(tr['sender'] ?? ''),
+    instrumentId:
+      instr && typeof instr === 'object'
+        ? String((instr as Record<string, unknown>)['id'] ?? 'Amulet')
+        : String(instr ?? 'Amulet'),
+    ...(typeof admin === 'string' && admin ? { instrumentAdmin: admin } : {}),
+    requestedAt: (tr['requestedAt'] as string | undefined) ?? undefined,
+    executeBefore,
+    expired: !!executeBefore && Date.parse(executeBefore) < nowMs,
+  };
+}
+
+function assetOffer(
+  c: WalletContract,
+  party: string,
+  assets: readonly SupportedAsset[],
+  nowMs: number,
+): V1ReceivedPendingOffer | undefined {
+  const tr = asRecord(c.createArguments['transfer']) ?? {};
+  if (accountParty(tr['receiver']) !== party) return undefined;
+  const instr = asRecord(tr['instrumentId']);
+  const admin = instr?.['admin'];
+  const id = instr?.['id'];
+  if (typeof admin !== 'string' || typeof id !== 'string') return undefined;
+  if (!assets.some((a) => a.instrumentAdmin === admin && a.instrumentId === id)) return undefined;
+  const requestedAt = typeof tr['requestedAt'] === 'string' ? tr['requestedAt'] : undefined;
+  const executeBefore = typeof tr['executeBefore'] === 'string' ? tr['executeBefore'] : undefined;
+  return {
+    transferInstructionCid: c.contractId,
+    amount: String(tr['amount'] ?? '0'),
+    sender: accountParty(tr['sender']),
+    instrumentId: id,
+    instrumentAdmin: admin,
+    requestedAt,
+    executeBefore,
+    expired: !!executeBefore && Date.parse(executeBefore) < nowMs,
+  };
+}
+
+/** Pending incoming offers for a wallet party, read from the wallet's own ACS. */
+export async function listReceivedViaWallet(
+  party: string,
+  assets: readonly SupportedAsset[] = [],
+): Promise<V1ReceivedView> {
+  const nowMs = Date.now();
+  const ccOffers = await readWalletOffers([AMULET_TRANSFER_INSTRUCTION_TID], party);
+  const pending: V1ReceivedPendingOffer[] = (ccOffers ?? [])
+    .filter((c) => ((c.createArguments['transfer'] ?? {}) as Record<string, unknown>)['receiver'] === party)
+    .map((c) => ccOffer(c, nowMs));
+
+  const configured = offerAssets(assets);
+  const templateIds = [...new Set(configured.map((a) => a.offerTemplateId!))];
+  const seen = new Set(pending.map((o) => o.transferInstructionCid));
+  for (const templateId of templateIds) {
+    const offers = await readWalletOffers([templateId], party);
+    const forTemplate = configured.filter((a) => a.offerTemplateId === templateId);
+    for (const c of offers ?? []) {
+      if (seen.has(c.contractId)) continue;
+      const offer = assetOffer(c, party, forTemplate, nowMs);
+      if (!offer) continue;
+      seen.add(c.contractId);
+      pending.push(offer);
+    }
+  }
   // A wallet party's delivered-transfer history isn't exposed through the
   // CIP-0103 surface, so `received` is left to the wallet's own balance view;
   // the actionable incoming (pending offers) is what the Inbox surfaces here.
   return { party, pending, received: [] };
+}
+
+export function offerAcceptInstrument(
+  offer: Pick<V1ReceivedPendingOffer, 'instrumentId' | 'instrumentAdmin'>,
+  assets: readonly SupportedAsset[],
+): ReceivedInstrument | undefined {
+  const admin = offer.instrumentAdmin;
+  if (!admin) return undefined;
+  const asset = offerAssets(assets).find(
+    (a) => a.instrumentAdmin === admin && a.instrumentId === offer.instrumentId,
+  );
+  return asset ? { admin, id: offer.instrumentId } : undefined;
 }
 
 /** Accept a pending incoming offer with the connected wallet: the proxy builds
@@ -102,8 +183,11 @@ export async function acceptReceivedViaWallet(
   client: Pick<CantonStreamsApi, 'prepareAcceptReceivedV1'>,
   party: string,
   transferInstructionCid: string,
+  instrument?: ReceivedInstrument,
 ): Promise<V1ReceivedAcceptResult> {
-  const prepared = await client.prepareAcceptReceivedV1(transferInstructionCid);
+  const prepared = instrument
+    ? await client.prepareAcceptReceivedV1(transferInstructionCid, instrument)
+    : await client.prepareAcceptReceivedV1(transferInstructionCid);
   if (prepared.actAs !== party) {
     throw new Error(
       `Prepared accept must be signed by ${prepared.actAs}, but the connected wallet is ${party}.`,

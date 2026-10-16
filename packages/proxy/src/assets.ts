@@ -18,6 +18,7 @@ export interface SupportedAsset {
   note?: string;
   /** Concrete holding template this asset is funded from / verified against. */
   holdingTemplateId: string;
+  offerTemplateId: string;
   /** Registry base for this asset's transfer-instruction factory. Empty string
    *  ⇒ the proxy's global REGISTRY_API_URL (Canton Coin's Scan). A non-CC asset
    *  must set its own base to be streamable. */
@@ -27,6 +28,9 @@ export interface SupportedAsset {
   /** Display decimals. */
   decimals: number;
 }
+
+const UTILITY_TRANSFER_OFFER_TEMPLATE_ID =
+  '#utility-registry-app-v0:Utility.Registry.App.V0.Model.Transfer:TransferOffer';
 
 function usable(party: string | undefined): party is string {
   return typeof party === 'string' && party.includes('::') && !party.startsWith('TBD');
@@ -51,6 +55,7 @@ export function getSupportedAssets(): SupportedAsset[] {
       holdingTemplateId: (
         process.env['HOLDING_TEMPLATE_ID'] ?? '#splice-amulet:Splice.Amulet:Amulet'
       ).trim(),
+      offerTemplateId: '',
       // Empty ⇒ the global REGISTRY_API_URL (CC's Scan already serves the
       // transfer-instruction factory at /registry/... directly).
       registryApiUrl: '',
@@ -74,6 +79,8 @@ export function getSupportedAssets(): SupportedAsset[] {
       standard: 'CIP-56 Token Standard',
       note: 'Circle USDC on Canton via xReserve.',
       holdingTemplateId: (process.env['USDCX_HOLDING_TEMPLATE_ID'] ?? '').trim(),
+      offerTemplateId:
+        process.env['USDCX_OFFER_TEMPLATE_ID']?.trim() || UTILITY_TRANSFER_OFFER_TEMPLATE_ID,
       registryApiUrl: usdcxRegistry.replace(/\/+$/, ''),
       transferVersion: (process.env['USDCX_TRANSFER_VERSION'] ?? 'v1') === 'v2' ? 'v2' : 'v1',
       decimals: Number(process.env['USDCX_DECIMALS'] ?? '6'),

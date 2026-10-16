@@ -318,7 +318,9 @@ function ReceivedOfferCard({ offer }: { readonly offer: V1ReceivedPendingOffer }
             <ArrowDownLeft size={11} /> {displayName(sender)} wants to send you
           </div>
           <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--fg)' }}>
-            {fmtCc(offer.amount)}
+            {instrumentLabel(offer.instrumentId) === 'CC'
+              ? fmtCc(offer.amount)
+              : `${fmtAmount(offer.amount)} ${instrumentLabel(offer.instrumentId)}`}
           </div>
         </div>
         {offer.expired ? (
@@ -339,7 +341,7 @@ function ReceivedOfferCard({ offer }: { readonly offer: V1ReceivedPendingOffer }
         ) : (
           <button
             className="btn btn-primary"
-            onClick={() => accept.mutate(offer.transferInstructionCid)}
+            onClick={() => accept.mutate(offer)}
             disabled={accept.isPending || accept.isSuccess}
             style={{ minWidth: 104, justifyContent: 'center' }}
           >
