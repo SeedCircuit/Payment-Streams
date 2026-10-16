@@ -8,7 +8,7 @@
  */
 
 import { useMemo, useState, type CSSProperties } from 'react';
-import { useNavigate, useLocation } from 'react-router';
+import { Link, useNavigate, useLocation } from 'react-router';
 import { useForm, FormProvider, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Check, Loader2, Zap } from 'lucide-react';
@@ -166,6 +166,14 @@ export function CreateStreamV1Form() {
           {/* Asset picker — writes the whitelisted `assetKey` sent to the proxy.
               Whitelist-only (no custom): the V1 lane rejects unknown keys. */}
           <AssetSelect keyName="assetKey" allowCustom={false} />
+          {!isCc && (
+            <div style={{ fontSize: 12.5, color: 'var(--fg-3)', lineHeight: 1.5 }}>
+              Each {unit} payment arrives as an offer the recipient has to accept in their wallet, and the
+              stream waits for that before sending the next one. For regular {unit} payments, a{' '}
+              <Link to="/distributions">distribution</Link> is smoother: the recipient approves once and every
+              payment lands automatically.
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
             <FormField

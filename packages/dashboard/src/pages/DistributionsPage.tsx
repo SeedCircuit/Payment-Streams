@@ -7,6 +7,7 @@ import {
   useDistributions,
   useFundDistribution,
 } from '../hooks/useDistributions.js';
+import { useAssets } from '../hooks/useAssets.js';
 import { useAuth } from '../store/auth.js';
 import { displayName, fmtAmount, instrumentLabel } from '../lib/format.js';
 import { ErrorState, Modal, PageHeader, Skeleton } from '../components/common/index.js';
@@ -80,6 +81,7 @@ export function DistributionsPage() {
   const { party } = useAuth();
   const distributions = useDistributions();
   const fund = useFundDistribution();
+  const assets = useAssets();
   const authorizeReceipt = useAuthorizeDistributionReceipt();
   const [selected, setSelected] = useState<DistributionRecord | null>(null);
   const [periods, setPeriods] = useState('30');
@@ -102,12 +104,18 @@ export function DistributionsPage() {
   const submitFunding = async (event: FormEvent) => {
     event.preventDefault();
     if (!selected || !party) return;
+    const asset = assets.data?.find(
+      (a) =>
+        a.instrumentAdmin === selected.instrumentId.admin &&
+        a.instrumentId === selected.instrumentId.id,
+    );
     try {
       const result = await fund.mutateAsync({
         record: selected,
         payerParty: party,
         periods: Number(periods),
         settlementDeadline: new Date(deadline),
+        ...(asset?.holdingTemplateId ? { holdingTemplateId: asset.holdingTemplateId } : {}),
       });
       setSubmissionMessage(
         result.confirmation === 'confirmed'
