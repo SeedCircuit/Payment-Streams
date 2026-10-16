@@ -5,9 +5,10 @@ Token-Standard asset.
 
 > **Status:** V2 is the preferred lane — assets that advertise CIP-56 V2
 > interfaces in their `supportedApis` metadata field route it automatically.
-> Assets live on MainNet that have not yet published V2 (Canton Coin /
-> Amulet, USDCx) set `allocationsV1: true` and route the transitional V1
-> lane (`splice-api-token-allocation-v1`) instead; see
+> USDCx advertises V2 on TestNet and MainNet and routes it. Assets live on
+> MainNet that have not yet published V2 (Canton Coin / Amulet) set
+> `allocationsV1: true` and route the transitional V1 lane
+> (`splice-api-token-allocation-v1`) instead; see
 > [V1-LANE-TESTING.md](../V1-LANE-TESTING.md). V1 has no iterated-allocation
 > or batch primitive, so those actions stay V2-only and recurring streams on
 > V1 run one allocation cycle per withdrawal. Per
@@ -45,7 +46,7 @@ For each asset, you supply:
 | Key | Lane | Notes |
 |---|---|---|
 | `cc` (Canton Coin / Amulet) | V1 (transitional) | Instrument id `Amulet`; admin = DSO party (DA-docs reference value, network-specific — confirm via `GET {scan}/api/scan/v0/dso-party-id`, see entry `meta.adminResolution`). Registry API served by Scan. |
-| `usdcx` (USDCx) | V1 (transitional) | Instrument id `USDCx`; real per-network issuer admin + registry base URL from Circle xReserve / DA docs (TestNet in fields, MainNet in `meta.mainnet`). Live checklist: [usdcx-field-validation.md](../validation/usdcx-field-validation.md). |
+| `usdcx` (USDCx) | V2 (V1 still served) | Instrument id `USDCx`; real per-network issuer admin + registry base URL from Circle xReserve / DA docs (TestNet in fields, MainNet in `meta.mainnet`). No transfer-preapproval API, so a direct transfer always lands as an offer the recipient accepts; use a [distribution](./multi-recipient-distributions.md) for recurring payments. Validation: [usdcx-field-validation.md](../validation/usdcx-field-validation.md). |
 | `v2-test-asset` | V2 | DevNet-only probe asset. |
 
 The `cc`/`usdcx` entries carry the real published instrument ids, admin
@@ -215,8 +216,8 @@ Set the per-asset environment before starting the proxy:
 | `USDCX_REGISTRY_API_URL` | yes | — | Base URL of this asset's transfer-instruction registry (distinct from CC's Scan) |
 | `USDCX_HOLDING_TEMPLATE_ID` | no | (empty) | Concrete holding template the asset is funded from / verified against |
 | `USDCX_INSTRUMENT_ID` | no | `USDCx` | Instrument id under that admin |
-| `USDCX_TRANSFER_VERSION` | no | `v1` | Token-standard transfer API version (`v1` / `v2`) |
-| `USDCX_DECIMALS` | no | `6` | Display decimals |
+| `USDCX_TRANSFER_VERSION` | no | `v1` | Token-standard transfer API version (`v1` / `v2`). USDCx serves both; set `v2`. Fixed per stream at creation. |
+| `USDCX_DECIMALS` | no | `6` | Display decimals (USDCx amounts are 10dp; set `10`) |
 
 Both `USDCX_ADMIN_PARTY` **and** `USDCX_REGISTRY_API_URL` must be present, or the
 asset is omitted from the whitelist entirely — a stream is never created against
@@ -232,9 +233,19 @@ Example (placeholders — substitute your network's real values):
 USDCX_ADMIN_PARTY=<usdcx-registrar-party>
 USDCX_REGISTRY_API_URL=https://<usdcx-registry-host>
 USDCX_HOLDING_TEMPLATE_ID=<package-id>:<Module>:<Template>
-USDCX_TRANSFER_VERSION=v1
-USDCX_DECIMALS=6
+USDCX_TRANSFER_VERSION=v2
+USDCX_DECIMALS=10
 ```
+
+The registry base must include the registrar path, e.g.
+`https://api.utilities.digitalasset-staging.com/api/token-standard/v0/registrars/<admin>`.
+The same base serves this asset's distributions: the proxy picks each
+distribution's registry from its instrument, and only falls back to
+`DISTRIBUTION_REGISTRY_API_URL` for an asset without its own (Canton Coin).
+
+A registry holding template is shared by every token that registry issues, so
+the proxy matches holdings to the stream's instrument id and admin before
+spending them.
 
 ### Creating a stream against it
 

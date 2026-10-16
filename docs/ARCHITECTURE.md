@@ -115,8 +115,9 @@ asset registry selects the token-standard lane:
   TransferEventsV2-driven automation.
 - **V1 lane (transitional):** `splice-api-token-allocation-v1` for registered
   assets that are live on V1 but have not yet published V2 interfaces, such as
-  CC / Amulet and USDCx. V1 runs one allocation cycle per withdrawal and does
-  not support V2-only iterated or batch settlement.
+  CC / Amulet. V1 runs one allocation cycle per withdrawal and does not support
+  V2-only iterated or batch settlement. USDCx left this lane when it published
+  V2.
 
 The legacy non-token settlement modes from earlier releases (`NumericLegacy`,
 `UtilityHoldingCustody`, `LocalAssetCustody`, hosted wallet-gateway
