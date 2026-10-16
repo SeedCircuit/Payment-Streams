@@ -1,0 +1,346 @@
+module CantonStreams.Stream.DistributionStream where
+
+import DA.Time (subTime, convertRelTimeToMicroseconds)
+
+import CantonStreams.Interface.Types
+  ( StreamId
+  , InstrumentIdV2
+  , AccountV2
+  )
+import CantonStreams.Stream.StreamRecord (FundingMode)
+import CantonStreams.Stream.Time (assertNotInFuture)
+
+data DistributionRule
+  = PercentageBps with
+      basisPoints : Int
+  | FixedAmountPerPeriod with
+      amount : Decimal
+  deriving (Eq, Show)
+
+data DistributionLeg = DistributionLeg with
+    legId : Text
+    receiver : AccountV2
+    rule : DistributionRule
+  deriving (Eq, Show)
+
+data DistributionSettlementLeg = DistributionSettlementLeg with
+    legId : Text
+    amount : Decimal
+  deriving (Eq, Show)
+
+data DistributionRecipientAuthorization = DistributionRecipientAuthorization with
+    receiver : AccountV2
+    authorizationId : Text
+    allocationCid : Text
+  deriving (Eq, Show)
+
+data DistributionStatus
+  = AwaitingFunding
+  | AwaitingRecipients
+  | DistributionActive
+  | DistributionPaused
+  | DistributionCompleted
+  | DistributionCancelled
+  deriving (Eq, Show)
+
+percentageBpsOrZero : DistributionRule -> Int
+percentageBpsOrZero rule = case rule of
+  PercentageBps basisPoints -> basisPoints
+  FixedAmountPerPeriod _ -> 0
+
+fixedAmountOrZero : DistributionRule -> Decimal
+fixedAmountOrZero rule = case rule of
+  PercentageBps _ -> 0.0
+  FixedAmountPerPeriod amount -> amount
+
+isPercentageRule : DistributionRule -> Bool
+isPercentageRule rule = case rule of
+  PercentageBps _ -> True
+  FixedAmountPerPeriod _ -> False
+
+isFixedRule : DistributionRule -> Bool
+isFixedRule = not . isPercentageRule
+
+ruleAmount : Decimal -> Decimal -> DistributionRule -> Decimal
+ruleAmount grossAmount grossAmountPerPeriod rule = case rule of
+  PercentageBps basisPoints -> grossAmount * intToDecimal basisPoints / 10000.0
+  FixedAmountPerPeriod amount -> grossAmount * amount / grossAmountPerPeriod
+
+distributionAmounts : Decimal -> Decimal -> [DistributionLeg] -> [DistributionSettlementLeg]
+distributionAmounts grossAmount grossAmountPerPeriod =
+  distributionAmountsGo grossAmount grossAmountPerPeriod grossAmount
+
+distributionAmountsGo : Decimal -> Decimal -> Decimal -> [DistributionLeg] -> [DistributionSettlementLeg]
+distributionAmountsGo _ _ _ [] = []
+distributionAmountsGo _ _ remaining [leg] =
+  [DistributionSettlementLeg with legId = leg.legId; amount = remaining]
+distributionAmountsGo grossAmount grossAmountPerPeriod remaining (leg :: rest) =
+  let amount = ruleAmount grossAmount grossAmountPerPeriod leg.rule
+  in DistributionSettlementLeg with legId = leg.legId; amount
+      :: distributionAmountsGo grossAmount grossAmountPerPeriod (remaining - amount) rest
+
+uniqueTexts : [Text] -> Bool
+uniqueTexts [] = True
+uniqueTexts (x :: xs) = not (x `elem` xs) && uniqueTexts xs
+
+uniqueAccounts : [AccountV2] -> Bool
+uniqueAccounts [] = True
+uniqueAccounts (x :: xs) = not (x `elem` xs) && uniqueAccounts xs
+
+configuredReceiverAccounts : [DistributionLeg] -> [AccountV2]
+configuredReceiverAccounts [] = []
+configuredReceiverAccounts (leg :: rest) =
+  leg.receiver :: filter ((/=) leg.receiver) (configuredReceiverAccounts rest)
+
+allReceiversAuthorized : [DistributionLeg] -> [DistributionRecipientAuthorization] -> Bool
+allReceiversAuthorized legs authorizations =
+  all
+    (\receiver -> any ((== receiver) . (.receiver)) authorizations)
+    (configuredReceiverAccounts legs)
+
+sameAuthorizationShape
+  : [DistributionRecipientAuthorization]
+  -> [DistributionRecipientAuthorization]
+  -> Bool
+sameAuthorizationShape current next =
+  length current == length next
+    && uniqueAccounts (map (.receiver) next)
+    && uniqueTexts (map (.authorizationId) next)
+    && all
+      (\authorization -> any
+        (\candidate ->
+          candidate.receiver == authorization.receiver
+            && candidate.authorizationId == authorization.authorizationId
+            && candidate.allocationCid /= "")
+        next)
+      current
+
+validDistributionLegs : Decimal -> [DistributionLeg] -> Bool
+validDistributionLegs grossAmountPerPeriod legs =
+  not (null legs)
+    && length legs <= 25
+    && uniqueTexts (map (.legId) legs)
+    && all (\leg -> leg.legId /= "") legs
+    &&
+      ( ( all (isPercentageRule . (.rule)) legs
+          && all (\leg -> percentageBpsOrZero leg.rule > 0) legs
+          && sum (map (percentageBpsOrZero . (.rule)) legs) == 10000
+        )
+        ||
+        ( all (isFixedRule . (.rule)) legs
+          && all (\leg -> fixedAmountOrZero leg.rule > 0.0) legs
+          && sum (map (fixedAmountOrZero . (.rule)) legs) == grossAmountPerPeriod
+        )
+      )
+
+accruedDistributionGross : DistributionStreamRecord -> Time -> Decimal
+accruedDistributionGross record at =
+  let effectiveAt = case record.endTime of
+        None -> at
+        Some end -> min at end
+      elapsedMicros = max 0 (convertRelTimeToMicroseconds (subTime effectiveAt record.startTime))
+      periodMicros = record.periodSeconds * 1000000
+      elapsedPeriods = elapsedMicros / periodMicros
+  in intToDecimal elapsedPeriods * record.grossAmountPerPeriod
+
+template DistributionStreamRecord
+  with
+    streamId : StreamId
+    operator : Party
+    payerAccount : AccountV2
+    instrumentId : InstrumentIdV2
+    grossAmountPerPeriod : Decimal
+    periodSeconds : Int
+    startTime : Time
+    endTime : Optional Time
+    legs : [DistributionLeg]
+    fundingMode : FundingMode
+    totalFunded : Decimal
+    totalGrossSettled : Decimal
+    fundingCount : Int
+    settlementCount : Int
+    currentAllocationCid : Optional Text
+    originalAllocationId : Optional Text
+    lastFundingId : Optional Text
+    lastSettlementId : Optional Text
+    fundingIds : [Text]
+    settlementIds : [Text]
+    recipientAuthorizations : [DistributionRecipientAuthorization]
+    recipientAuthorizationIds : [Text]
+    currentSettlementDeadline : Optional Time
+    status : DistributionStatus
+    observers : [Party]
+  where
+    signatory operator
+    observer observers
+
+    ensure grossAmountPerPeriod > 0.0
+      && periodSeconds > 0
+      && optional True (startTime <) endTime
+      && validDistributionLegs grossAmountPerPeriod legs
+      && totalFunded >= 0.0
+      && totalGrossSettled >= 0.0
+      && totalGrossSettled <= totalFunded
+      && fundingCount >= 0
+      && settlementCount >= 0
+      && length fundingIds == fundingCount
+      && length settlementIds == settlementCount
+      && uniqueTexts fundingIds
+      && uniqueTexts settlementIds
+      && uniqueAccounts (map (.receiver) recipientAuthorizations)
+      && uniqueTexts recipientAuthorizationIds
+      && all
+        (\authorization -> authorization.authorizationId `elem` recipientAuthorizationIds)
+        recipientAuthorizations
+
+    choice RecordDistributionFunding : ContractId DistributionStreamRecord
+      with
+        amount : Decimal
+        fundingId : Text
+        allocationCid : Text
+        originalAllocationCid : Optional Text
+        settlementDeadline : Time
+        expectedSequence : Int
+      controller operator
+      do
+        assertMsg "Distribution is not awaiting funding" (status == AwaitingFunding)
+        assertMsg "Funding amount must be positive" (amount > 0.0)
+        assertMsg "Funding id is required" (fundingId /= "")
+        assertMsg "Allocation cid is required" (allocationCid /= "")
+        assertMsg "Current allocation must be exhausted before funding again"
+          (currentAllocationCid == None && totalGrossSettled == totalFunded)
+        now <- getTime
+        assertMsg "Settlement deadline must be in the future" (settlementDeadline > now)
+        assertMsg "Funding sequence out of order" (expectedSequence == fundingCount + 1)
+        assertMsg "Duplicate funding id" (not (fundingId `elem` fundingIds))
+        let firstAllocation = case originalAllocationId of
+              Some _ -> originalAllocationId
+              None -> Some (case originalAllocationCid of
+                Some originalCid -> originalCid
+                None -> allocationCid)
+            nextStatus = if status == AwaitingFunding then AwaitingRecipients else status
+        create this with
+          totalFunded = totalFunded + amount
+          fundingCount = fundingCount + 1
+          currentAllocationCid = Some allocationCid
+          originalAllocationId = firstAllocation
+          lastFundingId = Some fundingId
+          fundingIds = fundingId :: fundingIds
+          recipientAuthorizations = []
+          currentSettlementDeadline = Some settlementDeadline
+          status = nextStatus
+
+    choice RecordDistributionRecipientAuthorization : ContractId DistributionStreamRecord
+      with
+        receiver : AccountV2
+        authorizationId : Text
+        allocationCid : Text
+        expectedCount : Int
+      controller operator
+      do
+        assertMsg "Distribution is not awaiting recipient authorization"
+          (status == AwaitingRecipients)
+        assertMsg "Receiver is not configured for this distribution"
+          (receiver `elem` configuredReceiverAccounts legs)
+        assertMsg "Receiver is already authorized"
+          (not (receiver `elem` map (.receiver) recipientAuthorizations))
+        assertMsg "Authorization id is required" (authorizationId /= "")
+        assertMsg "Recipient allocation cid is required" (allocationCid /= "")
+        assertMsg "Recipient authorization count out of order"
+          (expectedCount == length recipientAuthorizations + 1)
+        assertMsg "Duplicate recipient authorization id"
+          (not (authorizationId `elem` recipientAuthorizationIds))
+        create this with
+          recipientAuthorizations =
+            DistributionRecipientAuthorization with receiver; authorizationId; allocationCid
+              :: recipientAuthorizations
+          recipientAuthorizationIds = authorizationId :: recipientAuthorizationIds
+
+    choice ActivateDistribution : ContractId DistributionStreamRecord
+      controller operator
+      do
+        assertMsg "Distribution is not awaiting recipient authorization"
+          (status == AwaitingRecipients)
+        assertMsg "Distribution has no confirmed funding"
+          (totalFunded > 0.0 && currentAllocationCid /= None)
+        assertMsg "Not every receiver has authorized its transfer legs"
+          (allReceiversAuthorized legs recipientAuthorizations)
+        create this with status = DistributionActive
+
+    choice RecordDistributionSettlement : ContractId DistributionStreamRecord
+      with
+        grossAmount : Decimal
+        settledLegs : [DistributionSettlementLeg]
+        settlementId : Text
+        settledAt : Time
+        newAllocationCid : Optional Text
+        newRecipientAuthorizations : [DistributionRecipientAuthorization]
+        expectedSequence : Int
+      controller operator
+      do
+        assertMsg "Distribution is not active" (status == DistributionActive)
+        assertMsg "Gross settlement amount must be positive" (grossAmount > 0.0)
+        assertMsg "Settlement id is required" (settlementId /= "")
+        assertMsg "Settlement sequence out of order" (expectedSequence == settlementCount + 1)
+        assertMsg "Duplicate settlement id" (not (settlementId `elem` settlementIds))
+        assertMsg "Settlement legs do not match configured distribution"
+          (settledLegs == distributionAmounts grossAmount grossAmountPerPeriod legs)
+        let newTotalSettled = totalGrossSettled + grossAmount
+        assertMsg "Settlement exceeds confirmed funding" (newTotalSettled <= totalFunded)
+        assertMsg "Replacement allocation does not match remaining funding"
+          ((newTotalSettled < totalFunded) == (newAllocationCid /= None))
+        assertMsg "Receiver allocation replacements do not match remaining funding"
+          ( if newTotalSettled < totalFunded
+              then sameAuthorizationShape recipientAuthorizations newRecipientAuthorizations
+              else null newRecipientAuthorizations
+          )
+        assertNotInFuture "settledAt" settledAt
+        assertMsg "Settlement exceeds accrued gross amount"
+          (newTotalSettled <= accruedDistributionGross this settledAt)
+        create this with
+          totalGrossSettled = newTotalSettled
+          settlementCount = settlementCount + 1
+          currentAllocationCid = newAllocationCid
+          lastSettlementId = Some settlementId
+          settlementIds = settlementId :: settlementIds
+          recipientAuthorizations = newRecipientAuthorizations
+          currentSettlementDeadline =
+            if newTotalSettled < totalFunded then currentSettlementDeadline else None
+          status =
+            if newTotalSettled < totalFunded then DistributionActive else AwaitingFunding
+
+    choice PauseDistribution : ContractId DistributionStreamRecord
+      controller operator
+      do
+        assertMsg "Distribution is not active" (status == DistributionActive)
+        create this with status = DistributionPaused
+
+    choice ResumeDistribution : ContractId DistributionStreamRecord
+      controller operator
+      do
+        assertMsg "Distribution is not paused" (status == DistributionPaused)
+        create this with status = DistributionActive
+
+    choice CompleteDistribution : ContractId DistributionStreamRecord
+      controller operator
+      do
+        assertMsg "Distribution cannot be completed from its current status"
+          (status == DistributionActive || status == DistributionPaused)
+        create this with
+          status = DistributionCompleted
+          currentAllocationCid = None
+          recipientAuthorizations = []
+          currentSettlementDeadline = None
+
+    choice CancelDistribution : ContractId DistributionStreamRecord
+      with releasedAllocationCid : Optional Text
+      controller operator
+      do
+        assertMsg "Distribution is already closed"
+          (status /= DistributionCompleted && status /= DistributionCancelled)
+        let _ = releasedAllocationCid
+        create this with
+          status = DistributionCancelled
+          currentAllocationCid = None
+          recipientAuthorizations = []
+          currentSettlementDeadline = None

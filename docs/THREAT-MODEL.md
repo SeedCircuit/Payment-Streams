@@ -689,6 +689,33 @@ could mix legs from different streams or include unauthorized legs.
   `Bridge.checkConservationV2` — total leg amount cannot exceed the
   remaining undrawn balance (per stream).
 
+### Trust boundary 5a: operator-hosted distribution records
+
+**Risk:** `DistributionStreamRecord` is intentionally visible and actionable
+only to the operator. A compromised operator could prepare an incorrect split,
+record a settlement that did not happen, or expose participant payment data
+through its off-ledger API.
+
+**Mitigation:**
+
+- The payer signs the `SenderSide` of every immutable destination leg. Each
+  unique destination account separately signs its standard no-funds
+  `ReceiverSide` allocation. Activation and settlement require both sides.
+  The custom record never holds or moves tokens.
+- `SettlementFactory_SettleBatch` settles all destination legs atomically, and
+  the deterministic split calculation assigns rounding residual only to the
+  final configured leg so gross value is conserved.
+- The record rejects settlement beyond both confirmed funding and complete
+  elapsed periods. Sequence numbers and update ids guard reconciliation replay.
+- A second funding allocation is rejected while a current allocation cid or
+  funded balance remains. This prevents two live chains from being represented
+  as one balance without a canonical merge transaction.
+- The proxy scopes reads to the payer, configured recipients, and operator
+  readers. Production deployments must authenticate those identities; the
+  development party header is not a production control.
+- Allocation and settlement ledger events remain the payment source of truth.
+  Operators must verify those events before advancing the record.
+
 ### Trust boundary 6: interface package alignment
 
 **Risk:** If the Daml interface packages used by this repository drift

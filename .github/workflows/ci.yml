@@ -60,24 +60,36 @@ jobs:
       - name: Build Dashboard
         run: pnpm --filter @canton-streams/dashboard build
 
+      - name: Build Proxy
+        run: pnpm --filter @canton-streams/proxy build
+
+      - name: Build Executor
+        run: pnpm --filter @canton-streams/executor build
+
       - name: Test SDK
         run: pnpm --filter @canton-streams/sdk test
 
       - name: Test Dashboard
         run: pnpm --filter @canton-streams/dashboard test
 
-  # ─── Docker build (push to main only) ───
+      - name: Test Proxy
+        run: pnpm --filter @canton-streams/proxy test
+
+  # ─── Production container builds ───
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
     needs: [typescript]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Build dashboard image
         run: |
           docker build -f docker/Dockerfile.dashboard -t canton-streams-dashboard:latest .
+
+      - name: Build proxy image
+        run: |
+          docker build -f docker/Dockerfile.proxy -t canton-streams-proxy:latest .
 
 # ──────────────────────────────────────────────────────────────────────────
 # Daml build & test lives in its own workflow, not this fast push pipeline.

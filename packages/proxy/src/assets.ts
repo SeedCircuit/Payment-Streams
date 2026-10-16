@@ -88,3 +88,32 @@ export function getSupportedAssets(): SupportedAsset[] {
 export function resolveStreamAsset(key: string): SupportedAsset | undefined {
   return getSupportedAssets().find((a) => a.key === key);
 }
+
+export function resolveAssetForInstrument(instrument: {
+  admin: string;
+  id: string;
+}): SupportedAsset | undefined {
+  return getSupportedAssets().find(
+    (a) => a.instrumentAdmin === instrument.admin && a.instrumentId === instrument.id,
+  );
+}
+
+export interface InstrumentRegistryRoute {
+  asset: SupportedAsset;
+  registryApiUrl: string;
+  registryToken?: string;
+}
+
+export function resolveInstrumentRegistry(
+  instrument: { admin: string; id: string },
+  fallback: { url: string; token?: string | undefined },
+): InstrumentRegistryRoute | undefined {
+  const asset = resolveAssetForInstrument(instrument);
+  if (!asset) return undefined;
+  if (asset.registryApiUrl) return { asset, registryApiUrl: asset.registryApiUrl };
+  return {
+    asset,
+    registryApiUrl: fallback.url,
+    ...(fallback.token ? { registryToken: fallback.token } : {}),
+  };
+}

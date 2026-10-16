@@ -1,0 +1,38 @@
+module Test.Stream.StreamMandateLifecycle where
+
+import Daml.Script
+import DA.Date (Month(..), date)
+import DA.Time (time)
+
+import CantonStreams.Interface.Types
+import CantonStreams.Stream.StreamMandate
+
+testRevokeDisablesMandate : Script ()
+testRevokeDisablesMandate = script do
+  payer <- allocateParty "Payer"
+  operator <- allocateParty "Operator"
+  payee <- allocateParty "Payee"
+  let start = time (date 2026 Jan 1) 0 0 0
+  setTime start
+  mandateCid <- submit payer $ createCmd StreamMandate with
+    mandateId = "mandate-1"
+    payer
+    operator
+    payee
+    instrumentId = InstrumentIdV2 with admin = payer; id = "TEST"
+    ratePerCycle = 10.0
+    cadenceSeconds = 60
+    maxTotal = None
+    startTime = start
+    endTime = None
+    totalPulled = 0.0
+    cyclesPulled = 0
+    lastPulledAt = None
+    active = True
+    observers = []
+  () <- submit payer $ exerciseCmd mandateCid Revoke
+  [(inactiveCid, mandate)] <- query @StreamMandate payer
+  assertMsg "revoked mandate remains visible" (not mandate.active)
+  submitMustFail operator $ exerciseCmd inactiveCid RecordPull with
+    amount = 1.0
+    transferId = "transfer-1"

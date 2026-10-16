@@ -158,6 +158,15 @@ function V1Detail({ id, view }: { readonly id: string; readonly view: V1StreamVi
   const onSettle = async () => {
     setError(null);
     setResult(null);
+    if (lowBalance) {
+      const need = Math.max(0, settleCost - (bal.value ?? 0));
+      setError(
+        `Not enough ${unit} to settle this cycle. Your wallet holds ${bal.display ?? '0'} ${unit}, but ` +
+          `this cycle draws ${fmtCC(String(settleCost), unit)} — top up with at least ` +
+          `${fmtCC(String(need), unit)} more, then retry.`,
+      );
+      return;
+    }
     try {
       const res = await settle.mutateAsync({
         id,
@@ -183,7 +192,27 @@ function V1Detail({ id, view }: { readonly id: string; readonly view: V1StreamVi
       }
       setResult(res);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Settle failed');
+      const e = err as {
+        message?: string;
+        code?: string;
+        details?: { originalMessage?: string };
+        data?: { details?: { originalMessage?: string } };
+      };
+      console.error('[settle] wallet submit failed', err);
+      const raw = err instanceof Error ? err.message : 'Settle failed';
+      const original = (e?.details?.originalMessage ?? e?.data?.details?.originalMessage)?.trim();
+      if (original && !/^user rejected/i.test(original)) {
+        setError(`The ledger declined this settle: ${original}`);
+      } else if (e?.code === 'USER_REJECTED' || /user.?rejected|rejected ledgerapi/i.test(raw)) {
+        setError(
+          `The ledger declined this settle before it committed and the wallet signature ` +
+            `didn't complete — often a coin that was already spent or moved between reading ` +
+            `your balance and signing. Nothing was charged; retry, and if it keeps failing ` +
+            `check the browser console for the underlying ledger reason.`,
+        );
+      } else {
+        setError(raw);
+      }
     }
   };
 

@@ -72,6 +72,7 @@ This repo is not a good fit when:
 | `StreamAdmin` | Prefunded bounded stream with a start, end, and vesting mode | Vesting, subscriptions, scheduled payouts |
 | `StreamFlow` | Rolling stream that can be topped up, paused, resumed, and renewed | Payroll-like flows, recurring incentives |
 | `MilestoneAdmin` | Multi-leg release flow where named milestones unlock funds | Project delivery, KPI payouts, staged unlocks |
+| `DistributionStreamRecord` | Splits each V2 settlement across percentage or fixed-amount destinations | Revenue share, fees, multi-party recurring payments |
 
 ### Vesting Modes
 
@@ -320,6 +321,7 @@ Run the main checks:
 pnpm --filter @canton-streams/sdk test
 pnpm --filter @canton-streams/dashboard test
 pnpm --filter @canton-streams/proxy build
+pnpm --filter @canton-streams/proxy test
 pnpm --filter @canton-streams/dashboard build
 bash scripts/check-v2-conformance.sh
 docker compose -f docker/docker-compose.yml config
@@ -332,6 +334,11 @@ pnpm daml:deps
 pnpm daml:build
 pnpm daml:test
 ```
+
+These commands build local test DARs from source-built token dependencies. For
+TestNet or MainNet, use `pnpm daml:build:network` with the exact official DARs
+from the target validator release; see the
+[deployment guide](docs/DEPLOYMENT.md#1-daml-packages).
 
 Note: the Daml script package includes example scripts that require real party
 identifiers. If you run all scripts against placeholder parties, those example
@@ -347,6 +354,7 @@ participant.
 | Integrate into your dApp | [docs/integration-guide/README.md](docs/integration-guide/README.md) |
 | Understand the architecture | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Deploy safely | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Decide whether to launch on MainNet | [docs/MAINNET-READINESS.md](docs/MAINNET-READINESS.md) |
 | Operate in production | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
 | Review risks | [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) |
 | Check REST endpoints | [docs/API.md](docs/API.md) |

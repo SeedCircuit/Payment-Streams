@@ -14,9 +14,9 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@canton-network/dapp-sdk": "1.1.0",
-    "@partylayer/provider": "0.1.7",
-    "@partylayer/sdk": "0.4.1",
+    "@canton-network/dapp-sdk": "1.7.1",
+    "@partylayer/provider": "0.6.0",
+    "@partylayer/sdk": "0.19.0",
     "@canton-streams/sdk": "workspace:*",
     "@hookform/resolvers": "5.2.2",
     "@radix-ui/react-slot": "1.2.4",

@@ -17,6 +17,7 @@ import { SettingsPage } from './pages/SettingsPage.js';
 import { PoliciesPage } from './pages/PoliciesPage.js';
 import { ExecutionLogsPage } from './pages/ExecutionLogsPage.js';
 import { ExecutorStatusPage } from './pages/ExecutorStatusPage.js';
+import { DistributionsPage } from './pages/DistributionsPage.js';
 import { NotFoundPage } from './pages/NotFoundPage.js';
 
 export function AppRoutes() {
@@ -34,6 +35,7 @@ export function AppRoutes() {
         <Route path="/v1/escrows/create" element={<CreateEscrowPage />} />
         <Route path="/v1/escrows/:id" element={<EscrowDetailPage />} />
         <Route path="/flows" element={<FlowsPage />} />
+        <Route path="/distributions" element={<DistributionsPage />} />
         <Route path="/batch" element={<BatchPage />} />
         <Route path="/inbox" element={<InboxPage />} />
         <Route path="/policies" element={<PoliciesPage />} />

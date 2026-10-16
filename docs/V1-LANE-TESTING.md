@@ -4,7 +4,8 @@
 > It exists so Canton Coin (Amulet) and USDCx — live on MainNet today but not
 > yet publishing CIP-0112 V2 interfaces — can settle streams now. It is
 > deprecated from birth; once CC/USDCx advertise V2, its registry flags flip
-> to route V2 with no code change.
+> to route V2 with no code change. USDCx did so on 2026-10-16 and now routes
+> V2; Canton Coin remains on this lane.
 >
 > **Validated on TestNet (2026-06-10):** three full allocate → execute-transfer
 > cycles settled real CC on the Canton TestNet global synchronizer.

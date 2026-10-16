@@ -52,13 +52,13 @@
       "scanEndpointUrl": "https://scan.sv-1.test.global.canton.network.sync.global",
       "walletGatewayUrl": "TBD-operator-wallet-gateway",
       "tokenStandardApiUrl": "https://api.utilities.digitalasset-staging.com",
-      "allocationsV2": false,
+      "allocationsV2": true,
       "allocationsV1": true,
       "transferEventsV2": false,
       "meta": {
-        "standard": "CIP-56 V1 (transitional; Circle xReserve Registry Utility token)",
+        "standard": "CIP-56 V2 (Circle xReserve Registry Utility token; V1 still served)",
         "source": "USDCx instrument id, per-network registrar admin, and registry base URL per Circle xReserve / Digital Asset docs (docs.digitalasset.com/usdc/xreserve, docs.digitalasset.com/integrate/devnet/usdcx-support).",
-        "note": "USDCx is Circle's USDC on Canton via xReserve. V1 token standard today; flip V2 flags when it advertises V2.",
+        "note": "USDCx is Circle's USDC on Canton via xReserve. Its registry advertises holding-v2, transfer-instruction-v2, allocation-instruction-v2 and allocation-v2 on TestNet and MainNet (checked 2026-10-16), alongside the V1 APIs. transferEventsV2 stays false: no transfer-events API is advertised.",
         "fieldsAreFor": "TestNet — the admin and tokenStandardApiUrl above are the TestNet values.",
         "mainnet": {
           "admin": "decentralized-usdc-interchain-rep::12208115f1e168dd7e792320be9c4ca720c751a02a3053c7606e1c1cd3dad9bf60ef",

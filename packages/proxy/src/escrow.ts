@@ -193,6 +193,7 @@ export interface EscrowAgreement {
   /** The wallet that funded the escrow (recorded only; not a stakeholder). */
   originalPayer: string;
   recipient: string;
+  externalRef?: string;
   /** Whitelisted asset key this vault streams ('cc' or absent ⇒ Canton Coin). */
   assetKey?: string;
   /** Settlement instrument frozen at create time; absent ⇒ the global CC asset,
@@ -292,6 +293,7 @@ function leg(
   recipient: string,
   id: string,
   instrument?: V1Agreement['instrument'],
+  externalRef?: string,
 ): V1Agreement {
   return {
     agreementId: id,
@@ -302,6 +304,7 @@ function leg(
     effectiveFrom: new Date().toISOString(),
     arrearsPolicy: 'catch-up',
     ...(instrument ? { instrument } : {}),
+    ...(externalRef ? { externalRef } : {}),
   };
 }
 
@@ -647,6 +650,7 @@ export interface CreateEscrowInput {
    * When omitted, the proxy submits the deposit as `originalPayer` (only works
    * for a party this participant hosts — e.g. dev/hosted payers). */
   fundingTransferId?: string;
+  externalRef?: string;
 }
 
 export class EscrowLane {
@@ -973,14 +977,23 @@ export class EscrowLane {
           );
         }
         const offerAmount = Number(offer.amount);
-        const ownedBefore = await escrowOwnedHoldings(this.config, instrument.holdingTemplateId);
+        const depositInstrument = { id: instrument.id, admin: instrument.admin };
+        const ownedBefore = await escrowOwnedHoldings(
+          this.config,
+          instrument.holdingTemplateId,
+          depositInstrument,
+        );
         await acceptOfferByCid(
           this.config,
           this.config.escrowParty,
           offer.transferInstructionCid,
           instrument.registryApiUrl,
         );
-        const ownedAfter = await escrowOwnedHoldings(this.config, instrument.holdingTemplateId);
+        const ownedAfter = await escrowOwnedHoldings(
+          this.config,
+          instrument.holdingTemplateId,
+          depositInstrument,
+        );
         // The accept has committed on-ledger; a failure past this point stranded
         // the payer's now-custodied funds, so log an out-of-band refund alert.
         if (ownedAfter + 1e-6 < ownedBefore + offerAmount) {
@@ -1053,6 +1066,7 @@ export class EscrowLane {
       escrowId,
       originalPayer,
       recipient,
+      ...(input.externalRef ? { externalRef: input.externalRef } : {}),
       ...(assetKey ? { assetKey } : {}),
       ...(instrument ? { instrument } : {}),
       ratePerCycle: dec(ratePerCycle),
@@ -1135,7 +1149,7 @@ export class EscrowLane {
     await this.assertPoolSolvent(store, e);
     const res = await settleCycle(
       this.config,
-      leg(this.config.escrowParty, e.recipient, `${escrowId}:release`, e.instrument),
+      leg(this.config.escrowParty, e.recipient, `${escrowId}:release`, e.instrument, e.externalRef),
       amount,
       cycleNo,
     );

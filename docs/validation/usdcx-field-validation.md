@@ -1,62 +1,64 @@
-# USDCx field validation — transitional V1 lane
+# USDCx field validation
 
-> **Status:** USDCx is a CIP-56 V1 token-standard asset live on MainNet today.
-> It settles streams through the same transitional V1 lane
-> (`splice-api-token-allocation-v1`) that was field-validated with real Canton
-> Coin on TestNet (three allocate → execute-transfer cycles plus an instrumented
-> balance-conservation run; see [V1-LANE-TESTING.md](../V1-LANE-TESTING.md)).
-> The registry routing (issuer admin party, instrument id, registry API base)
-> is committed in `config/asset-registry.json` from Circle xReserve / Digital
-> Asset docs. The sections below separate what the shared lane already exercises
-> from the steps a live USDCx run adds.
+> **Status (2026-10-16):** USDCx publishes the CIP-56 V2 token standard on
+> TestNet and MainNet, and Canton Payment Streams routes it on V2. Its registry
+> advertises `holding-v2`, `transfer-instruction-v2`,
+> `allocation-instruction-v2` and `allocation-v2`, alongside the V1 APIs it
+> still serves. It does not advertise a transfer-events API or a
+> transfer-preapproval API. The full V2 path is proven live on TestNet against
+> the same DA Utility registry that issues USDCx (§4). One step remains: a run
+> with USDCx itself, which needs a party we control to own unlocked USDCx (§5).
 
 ## 1. Code-path parity with CC
 
-USDCx and CC share the identical V1 code path end to end. The only thing
-that differs is registry routing data — which is the design goal: the SDK
-never branches by asset name, only by capability flags.
+USDCx and Canton Coin share one code path. Only registry routing data differs:
+the SDK never branches by asset name, only by capability flags, and the proxy
+picks each asset's registry from its instrument.
 
 | Layer | Shared component | Per-asset difference |
 | --- | --- | --- |
-| Wire builders | `packages/sdk/src/commands/allocation-v1.ts` (SettlementInfo, TransferLeg, ExtraArgs/ChoiceContext) | none — `InstrumentId { admin, id }` values come from the registry |
-| Dispatch | `dispatchSettlementV1` + capability gate (`packages/sdk/src/settlement/allocation-dispatch.ts`, `packages/sdk/src/assets/capabilities.ts`) | none |
-| Choice contexts | `packages/sdk/src/settlement/choice-context.ts` (`/registry/allocation-instruction/v1/allocation-factory`, `/registry/allocations/v1/{cid}/choice-contexts/execute-transfer`) | base URL: Scan host for Amulet vs the USDCx issuer's registry endpoint |
-| Disclosed contracts | gRPC + JSON API transports | none — passed through verbatim from the registry response |
-| On-ledger request shim | `packages/daml/v1-shim` (`StreamAllocationRequestV1`) | none |
-| Probes | `scripts/devnet-v1-cc-stream-probe.mjs` (one V1 cycle), `scripts/testnet-usdcx-stream-probe.mjs` (lifecycle, `--asset-key`) | registry entry selected by `--asset-key cc` / `--asset-key usdcx` |
-| Registry routing | `config/asset-registry.json` | `instrumentIdV2` (doubles as the V1 InstrumentId), `adminParty`, `tokenStandardApiUrl`, Scan/wallet-gateway URLs |
+| Capability routing | `packages/sdk/src/assets/capabilities.ts` (`resolveSettlementVersion`, `assertActionSupported`) | `allocationsV2` / `allocationsV1` / `transferEventsV2` flags in `config/asset-registry.json` |
+| Proxy asset whitelist | `packages/proxy/src/assets.ts` | `USDCX_*` env: admin, registry base, holding template, transfer version |
+| Transfers | `prepareSettleCommandV2` / `prepareSettleCommand` in `packages/proxy/src/v1-lane.ts` | registry base and version, fixed per stream at creation |
+| Distributions | `packages/proxy/src/distribution.ts` + `resolveInstrumentRegistry` | registry base resolved from the record's instrument |
+| Holdings | `senderHoldings` / `escrowOwnedHoldings` | concrete holding template; holdings matched to the instrument's id and admin |
+| Choice contexts | registry endpoints under `/registry/...` | base URL: Scan for Amulet, the registrar-scoped utility base for USDCx |
 
-Expected per-asset behavioral differences to watch for on the live run
-(all wire-compatible via the V1 interfaces):
+Behavioural differences to expect, all wire-compatible:
 
-- **Factory template.** Scan returns `ExternalPartyAmuletRules` as Amulet's
-  `AllocationFactory`; the USDCx registry returns its own implementation.
-  The SDK exercises the interface choice, so only the disclosed template ids
-  in logs will differ.
-- **Allocation template id for polling.** CC polls
-  `Splice.AmuletAllocation:AmuletAllocation`; USDCx needs the issuer's
-  allocation template id (set `ALLOCATION_TEMPLATE_ID`, or pass
-  `ALLOCATION_CID` after allocating in the wallet UI).
-- **Fees.** CC showed exact balance conservation (post-CIP-78, no transfer
-  fees). USDCx fee behavior must be observed, not assumed — record the
-  before/after deltas rather than asserting zero a priori.
+- **No pre-approval.** A direct USDCx transfer always lands as an offer the
+  recipient accepts. The proxy keeps one offer per stream outstanding and
+  reconciles accepts and reclaims from the ledger before offering the next
+  cycle. For recurring payments, use a
+  [distribution](../integration-guide/multi-recipient-distributions.md): the
+  recipient authorizes once per funded runway.
+- **Shared holding template.** `utility-registry-holding-v0` holds every token
+  its registry issues, so a party can hold many unrelated instruments under it.
+  Holdings are matched to the instrument before they are spent, and large
+  holding sets are read over the participant's WebSocket stream, past the
+  HTTP list cap.
+- **Empty iteration funding.** A USDCx allocation with no iteration funding
+  reports `nextIterationFunding: {}` where Canton Coin reports `null`.
+- **Off Scan.** USDCx transfers are not indexed by Canton Coin's Scan. The
+  proxy confirms USDCx accepts and reclaims on its own participant, reading as
+  whichever stream party it hosts, and refuses to record them otherwise.
+- **Fees.** Record observed before/after balances; do not assume zero.
 
-## 2. What is validated today
+## 2. What is validated
 
 | Item | Evidence |
 | --- | --- |
-| V1 wire encodings (allocation request, `Allocation_ExecuteTransfer`/`_Cancel`/`_Withdraw`, ExtraArgs/ChoiceContext) | SDK unit tests green (`pnpm --filter @canton-streams/sdk test`) |
-| Shared V1 lane against a real network | Field-proven with CC on TestNet: 3 cycles + instrumented conservation run (see [V1-LANE-TESTING.md](../V1-LANE-TESTING.md)) |
-| Registry lookup for `usdcx` | `loadAssetRegistry(config/asset-registry.json)` resolves `usdcx`; `resolveSettlementVersion` routes `v1`; `getAssetByV2Id({ admin, id })` round-trips |
-| Capability gating | `allocation-iterated` / `allocation-batch` on `usdcx` throw (V2-only actions); recurring streams run one cycle per withdrawal |
-| Probe flag parsing + registry override | `node scripts/testnet-usdcx-stream-probe.mjs --dry-run --target testnet --asset-key usdcx` resolves `instrumentId=USDCx` + admin/depository from the registry |
-| Placeholder guard | Pre-flight (`scripts/lib/preflight.mjs`) flags the remaining `TBD-` value (`walletGatewayUrl`, which is operator-specific) in the `usdcx` entry: warning on DevNet/TestNet, **hard error on `--target mainnet`** |
+| Registry advertises V2 | `GET {registry}/registry/metadata/v1/info` on TestNet staging and MainNet (2026-10-16); V2 factories answer `422` to an empty body (present) |
+| SDK routing | `packages/sdk/test/assets/committed-registry.test.ts`: the committed registry routes `usdcx` to V2, permits `allocation-iterated` and `allocation-batch`, keeps an explicit V1 pin working, and refuses `event-subscription` |
+| Proxy routing | `packages/proxy/test/assets.test.mjs`: per-instrument registry resolution, fallback token isolation, offer-accept routing |
+| Large holding sets | `packages/proxy/test/acs-stream.test.mjs`: WebSocket fallback past the 200-row cap; error frames and abnormal closes reject |
+| Offer lifecycle | same file: holding-to-instrument matching, accept vs withdraw classification |
+| Live V2 path | §4 |
 
 ## 3. Per-network routing (committed real values)
 
-The `usdcx` entry carries the real Circle xReserve / Digital Asset
-published routing. The fields hold the **TestNet** values; `meta.mainnet`
-holds the MainNet overrides.
+The `usdcx` entry carries the Circle xReserve / Digital Asset published
+routing. Fields hold the **TestNet** values; `meta.mainnet` holds MainNet.
 
 | Field | TestNet (entry) | MainNet (`meta.mainnet`) |
 |---|---|---|
@@ -65,83 +67,50 @@ holds the MainNet overrides.
 | `tokenStandardApiUrl` | `https://api.utilities.digitalasset-staging.com` | `https://api.utilities.digitalasset.com` |
 | `scanEndpointUrl` | `https://scan.sv-1.test.global.canton.network.sync.global` | `https://scan.sv-1.global.canton.network.sync.global` |
 
-USDCx runs a dedicated registry app (unlike Amulet, whose registry API is
-served by Scan); the burn/mint factory lives at
-`/api/utilities/v0/registry/burn-mint-instruction/v0/burn-mint-factory`
-and choice-context endpoints under `/registry/allocations/v1/...` on
-`tokenStandardApiUrl`. Source: Circle xReserve / Digital Asset docs
-(`docs.digitalasset.com/usdc/xreserve`, `.../integrate/devnet/usdcx-support`).
+The token-standard registry sits under a registrar-scoped prefix:
+`{tokenStandardApiUrl}/api/token-standard/v0/registrars/{admin}/registry/...`.
+That full base is what `USDCX_REGISTRY_API_URL` must hold. Only
+`walletGatewayUrl` stays operator-specific.
 
-Only `walletGatewayUrl` stays operator-specific (each operator runs their
-own gateway). Cross-check before a live run: query one sender USDCx holding
-and confirm its `admin` equals the registry `adminParty` for that network.
+## 4. Live V2 run on TestNet
 
-## 4. Live checklist (pending a funded USDCx party)
+No party we control owns unlocked USDCx, so the run used **BIT**, a token
+issued by `bitdynamicsab-testnet-1` on the same DA Utility registry. It has the
+identical `supportedApis`, the same `utility-registry-holding-v0` template and
+the same registrar-scoped API. BIT was placed in the proxy's `usdcx` slot
+(`USDCX_ADMIN_PARTY`, `USDCX_INSTRUMENT_ID=BIT`, its registry base,
+`USDCX_TRANSFER_VERSION=v2`), so every call took the USDCx code path. The run
+used an isolated proxy instance with its own state.
 
-Blocked on: a sender party funded with USDCx on the target network, plus
-the resolved issuer endpoints from §3. When both exist, run exactly this:
+| Scenario | Result |
+| --- | --- |
+| Two-recipient 90/10 distribution: fund, both recipients authorize, activate, `SettlementFactory_SettleBatch` | Supplier +9, fee +1 BIT, atomically; record reconciled (`settlementCount 1`, `AwaitingFunding`). Settle update `122057e5c99e246c0181ccb80bd1994cfd40f6317d17242ffbaa70f63aa8dd003044` |
+| Same distribution in Canton Coin (regression) | Supplier +0.9, fee +0.1 CC; registry fell back to Scan. Settle update `12207c854cd435644619a26f1a0d2e268446f43997f80589ce51ea93ae83c9d065c5` |
+| Distribution with an unconfigured instrument | Refused, `400 distribution_asset_unsupported` |
+| V2 transfer stream: settle | Payer's holdings (over 300 under the shared template) read past the cap and filtered to BIT; V2 transfer committed as a pending offer |
+| Recipient inbox, then accept | Offer listed with V2 account parties; accept routed to the token's registry; recipient +2 BIT |
+| Settle again while an offer is live | Refused (`pending_acceptance`); no second offer |
+| Offer accepted outside the stream, then settle | Reconciled from the ledger: cycle credited with the accept's update id; next cycle offered |
+| Offer reclaimed without recording it, then settle | Reconciled as returned, nothing credited; the cycle re-offered under a fresh command id |
+| Recording an accept as a reclaim | Refused (`settlement_mismatch`) |
 
-1. **Fill the registry entry.** Replace the remaining placeholder value
-   (`walletGatewayUrl`, which is operator-specific) in the `usdcx` entry of
-   `config/asset-registry.json` (and mirror into
-   `scripts/asset-registry-seeds.json`). The admin/`adminParty`,
-   `tokenStandardApiUrl` and `scanEndpointUrl` are already committed real
-   values (see §3).
-2. **Pre-flight (no writes):**
+## 5. Remaining: a run with USDCx itself
 
-   ```bash
-   CANTON_JSON_API_URL=http://<participant>:7575 \
-   CANTON_LEDGER_TOKEN=$TOKEN \
-   SENDER_PARTY=<funded-usdcx-party> RECIPIENT_PARTY=<recipient> ESCROW_PARTY=<operator> \
-   node scripts/testnet-usdcx-stream-probe.mjs --dry-run --target testnet --asset-key usdcx
-   ```
+Blocked on a party hosted on our participant that **owns** unlocked USDCx.
+Most USDCx a wallet shows is registrar-custodied and only observed, which
+cannot fund a transfer or allocation. Once such a party exists:
 
-   Expected: the "Asset registry override" block prints
-   `instrumentId=USDCx` and the resolved admin party; pre-flight reports
-   a single placeholder warning for the operator-specific `walletGatewayUrl`
-   (a warning, not an error, on `--target testnet`) and `✓ pre-flight passed`,
-   then exits before any ledger write. Zero placeholder warnings only holds
-   once `walletGatewayUrl` is filled.
-3. **Record opening balances.** Sum the sender's and recipient's owned
-   USDCx holdings (concrete-template ACS query with the package-name id —
-   interface queries hit the JSON API 200-element cap; both lessons carry
-   over from the CC run).
-4. **One V1 allocation cycle** (the path field-proven with CC):
+1. Confirm it owns unlocked USDCx: query `#utility-registry-holding-v0:Utility.Registry.Holding.V0.Holding:Holding`
+   for the party (over the WebSocket ACS stream if it holds many) and keep rows
+   with `owner` equal to the party, `lock` null and `instrument.id` `USDCx`.
+2. Run the two-recipient distribution from §4 with `instrumentId`
+   `{ admin: <usdcx admin>, id: "USDCx" }` and record the settle update id and
+   both recipients' balance deltas, including any issuer fee.
+3. Run one direct stream cycle and accept it, recording the same.
 
-   ```bash
-   CANTON_JSON_API_URL=http://<participant>:7575 \
-   REGISTRY_API_URL=<usdcx-registry-base> \
-   CC_ADMIN_PARTY=<usdcx-issuer-admin> INSTRUMENT_ID=USDCx \
-   SENDER_PARTY=<funded-usdcx-party> RECIPIENT_PARTY=<recipient> EXECUTOR_PARTY=<operator> \
-   AMOUNT=1.0 \
-   node scripts/devnet-v1-cc-stream-probe.mjs
-   ```
+## 6. V1 lane
 
-   Start with `DRY_RUN=true`. Auto-allocate needs the issuer's factory to
-   accept `AllocationFactory_Allocate` from the sender; otherwise allocate
-   in the sender's wallet UI and pass `ALLOCATION_CID`. Expected steps:
-   factory resolution → allocate (locks USDCx, correlated by
-   `settlementRef.id = <streamId>:cycle-<n>`) → execute-transfer choice
-   context → `Allocation_ExecuteTransfer` → settled.
-5. **Assert balances.** Recipient delta = +AMOUNT. Sender delta = −AMOUNT
-   minus any issuer fee (record the observed fee; CC's was zero). No
-   residual locked allocation for the settlement ref.
-6. **Verify publicly.** Fetch each cycle's update id via
-   `GET {scan-host}/api/scan/v2/updates/{update_id}` and record
-   `record_time`, `synchronizer_id`, and root events in your own run report.
-7. **Repeat for ≥2 cycles** against one stream id to demonstrate the
-   per-withdrawal cycle cadence, then run the full lifecycle probe without
-   `--dry-run`.
-
-The authority model is unchanged from CC (`Allocation_ExecuteTransfer` is
-jointly controlled by executor + sender + receiver) — see
-[V1-LANE-TESTING.md](../V1-LANE-TESTING.md) for the co-hosting requirement
-and the split-topology composition pattern.
-
-## 5. After USDCx publishes V2
-
-Per CIP-0112 §5, USDCx is expected to advertise V2 in `supportedApis`.
-When it does: flip `allocationsV2`/`transferEventsV2` in the registry
-entry (no code change), re-run the V2 probe
-(`scripts/testnet-v2-stream-probe.mjs`), and retire this V1 checklist with
-the lane.
+USDCx still serves the V1 APIs, so a stream created before the switch keeps
+its V1 version and continues to settle. New streams take the version in
+`USDCX_TRANSFER_VERSION`. The V1 lane itself is documented in
+[V1-LANE-TESTING.md](../V1-LANE-TESTING.md).

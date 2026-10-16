@@ -333,6 +333,11 @@ pnpm daml:build
 pnpm daml:test
 ```
 
+These commands build local test DARs from source-built token dependencies. For
+TestNet or MainNet, use `pnpm daml:build:network` with the exact official DARs
+from the target validator release; see the
+[deployment guide](./DEPLOYMENT.md#1-daml-packages).
+
 Note: the Daml script package includes example scripts that require real party
 identifiers. If you run all scripts against placeholder parties, those example
 scripts will fail until you replace the placeholders with parties from your
@@ -347,6 +352,7 @@ participant.
 | Integrate into your dApp | [docs/integration-guide/README.md](./integration-guide/README.md) |
 | Understand the architecture | [docs/ARCHITECTURE.md](./ARCHITECTURE.md) |
 | Deploy safely | [docs/DEPLOYMENT.md](./DEPLOYMENT.md) |
+| Decide whether to launch on MainNet | [docs/MAINNET-READINESS.md](./MAINNET-READINESS.md) |
 | Operate in production | [docs/OPERATIONS.md](./OPERATIONS.md) |
 | Review risks | [docs/THREAT-MODEL.md](./THREAT-MODEL.md) |
 | Check REST endpoints | [docs/API.md](./API.md) |

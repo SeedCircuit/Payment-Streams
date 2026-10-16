@@ -447,6 +447,12 @@ function rawHoldingAmount(args: Record<string, unknown>): string | undefined {
  * neither is found, so the caller omits the proof and the proxy falls back to
  * its interim trust path rather than hard-failing the settle.
  */
+export function accountParty(value: unknown): string {
+  if (typeof value === 'string') return value;
+  const owner = asRecord(value)?.['owner'];
+  return typeof owner === 'string' ? owner : '';
+}
+
 export function extractTransferProof(
   update: unknown,
   opts: { payerParty: string; recipientParty?: string; instrumentId: string; instrumentAdmin?: string },
@@ -486,18 +492,18 @@ export function extractTransferProof(
       if (t) transfers.push(t);
     }
     for (const t of transfers) {
-      const receiver = t['receiver'];
-      if (typeof receiver !== 'string' || !wantOwner(receiver)) continue;
+      const receiver = accountParty(t['receiver']);
+      if (!receiver || !wantOwner(receiver)) continue;
       const inst = readInstrumentId(t);
       if (inst.id && inst.id !== opts.instrumentId) continue;
       if (opts.instrumentAdmin && inst.admin && inst.admin !== opts.instrumentAdmin) continue;
       const amt = t['amount'];
       const amount = typeof amt === 'string' ? amt : amt != null ? String(amt) : undefined;
       if (!amount || !(Number(amount) > 0)) continue;
-      const sender = t['sender'];
+      const sender = accountParty(t['sender']);
       const admin = inst.admin ?? opts.instrumentAdmin;
       return {
-        ...(typeof sender === 'string' ? { sender } : {}),
+        ...(sender ? { sender } : {}),
         receiver,
         amount,
         instrumentId: inst.id ?? opts.instrumentId,

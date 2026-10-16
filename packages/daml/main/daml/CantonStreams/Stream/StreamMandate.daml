@@ -122,9 +122,11 @@ template StreamMandate
     -- | The payer revokes the mandate. No operator cooperation required. Flips
     -- `active` to False (rather than archiving), so the `RecordPull` guard is a
     -- live check and the revocation is an auditable on-ledger state.
-    choice Revoke : ContractId StreamMandate
+    choice Revoke : ()
       controller payer
-      do create this with active = False
+      do
+        _ <- create this with active = False
+        pure ()
 
     nonconsuming choice GetMandateInfo : MandateInfo
       with

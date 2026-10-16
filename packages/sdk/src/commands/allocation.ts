@@ -130,6 +130,22 @@ export interface AllocationRequestPayload {
   readonly argument: Record<string, unknown>;
 }
 
+export interface AllocationFactoryAllocateParams {
+  readonly settlement: AllocationSettlementInfo;
+  readonly admin: string;
+  readonly authorizer: AccountV2;
+  readonly transferLegSides: ReadonlyArray<TransferLegSideV2>;
+  readonly settlementDeadline: Date;
+  readonly nextIterationFunding?: NextIterationFundingAmounts | undefined;
+  readonly committed?: boolean | undefined;
+  readonly allocationMeta?: AllocationMetadata | undefined;
+  readonly requestedAt: Date;
+  readonly inputHoldingCids: ReadonlyArray<string>;
+  readonly actors: ReadonlyArray<string>;
+  readonly choiceContextValues?: Readonly<Record<string, unknown>> | undefined;
+  readonly extraArgsMeta?: AllocationMetadata | undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Helper: timestamp formatting
 // ---------------------------------------------------------------------------
@@ -261,6 +277,146 @@ export function buildAllocationRequest(
   };
 
   return { version: 'v2', templateId, argument };
+}
+
+function accountToDaJson(account: AccountV2): Record<string, unknown> {
+  return {
+    owner: account.owner ?? null,
+    provider: account.provider ?? null,
+    id: account.id,
+  };
+}
+
+function metadataToDaJson(meta: AllocationMetadata | undefined): Record<string, unknown> {
+  return { values: { ...(meta ?? {}) } };
+}
+
+export function buildAllocationFactoryAllocateJson(
+  params: AllocationFactoryAllocateParams,
+): Record<string, unknown> {
+  const executors = resolveExecutors(params.settlement);
+  const iterationFunding = Object.values(params.nextIterationFunding ?? {}).map(
+    (amount) => new Decimal(amount),
+  );
+  if (iterationFunding.some((amount) => !amount.isFinite() || amount.lte(0))) {
+    throw new Error('AllocationFactory_Allocate iteration funding must be positive');
+  }
+  if (params.transferLegSides.length === 0 && iterationFunding.length === 0) {
+    throw new Error('AllocationFactory_Allocate requires transfer legs or iteration funding');
+  }
+  if (
+    params.inputHoldingCids.length === 0 &&
+    (params.transferLegSides.some((leg) => leg.side === 'SenderSide') ||
+      iterationFunding.length > 0)
+  ) {
+    throw new Error('AllocationFactory_Allocate requires input holding cids for funded allocations');
+  }
+  const actors = [...new Set(params.actors)];
+  if (actors.length === 0 || actors.some((actor) => actor.trim() === '')) {
+    throw new Error('AllocationFactory_Allocate requires at least one actor');
+  }
+
+  return {
+    settlement: {
+      executors: [...executors],
+      id: params.settlement.settlementRefId,
+      cid: params.settlement.settlementRefCid ?? null,
+      meta: metadataToDaJson(params.settlement.meta),
+    },
+    allocation: {
+      admin: params.admin,
+      authorizer: accountToDaJson(params.authorizer),
+      transferLegSides: params.transferLegSides.map((leg) => ({
+        transferLegId: leg.transferLegId,
+        side: leg.side,
+        otherside: accountToDaJson(leg.otherside),
+        amount: new Decimal(leg.amount).toFixed(10),
+        instrumentId: leg.instrumentId,
+        meta: metadataToDaJson(leg.meta),
+      })),
+      settlementDeadline: params.settlementDeadline.toISOString(),
+      nextIterationFunding:
+        params.nextIterationFunding === undefined
+          ? null
+          : Object.fromEntries(
+              Object.entries(params.nextIterationFunding).map(([key, value]) => [
+                key,
+                new Decimal(value).toFixed(10),
+              ]),
+            ),
+      committed: params.committed ?? true,
+      meta: metadataToDaJson(params.allocationMeta),
+    },
+    requestedAt: params.requestedAt.toISOString(),
+    inputHoldingCids: [...params.inputHoldingCids],
+    extraArgs: {
+      context: { values: { ...(params.choiceContextValues ?? {}) } },
+      meta: metadataToDaJson(params.extraArgsMeta),
+    },
+    actors,
+  };
+}
+
+export interface SettlementFactorySettleBatchJsonParams extends BatchSettlementParams {
+  readonly actors: ReadonlyArray<string>;
+  readonly choiceContextValues?: Readonly<Record<string, unknown>> | undefined;
+  readonly extraArgsMeta?: AllocationMetadata | undefined;
+}
+
+export function buildSettlementFactorySettleBatchJson(
+  params: SettlementFactorySettleBatchJsonParams,
+): Record<string, unknown> {
+  const actors = [...new Set(params.actors)];
+  if (actors.length === 0 || actors.some((actor) => actor.trim() === '')) {
+    throw new Error('SettlementFactory_SettleBatch requires at least one actor');
+  }
+  if (params.transferLegs.length === 0) {
+    throw new Error('SettlementFactory_SettleBatch requires at least one transfer leg');
+  }
+  if (params.allocations.length === 0) {
+    throw new Error('SettlementFactory_SettleBatch requires at least one allocation');
+  }
+  return {
+    settlement: {
+      executors: [...resolveExecutors(params.settlement)],
+      id: params.settlement.settlementRefId,
+      cid: params.settlement.settlementRefCid ?? null,
+      meta: metadataToDaJson(params.settlement.meta),
+    },
+    transferLegs: params.transferLegs.map((leg) => ({
+      transferLegId: leg.transferLegId,
+      sender: accountToDaJson(leg.sender),
+      receiver: accountToDaJson(leg.receiver),
+      amount: new Decimal(leg.amount).toFixed(10),
+      instrumentId: leg.instrumentId,
+      meta: metadataToDaJson(leg.meta),
+    })),
+    allocations: params.allocations.map((allocation) => ({
+      allocationCid: allocation.allocationCid,
+      extraTransferLegSides: (allocation.extraTransferLegSides ?? []).map((leg) => ({
+        transferLegId: leg.transferLegId,
+        side: leg.side,
+        otherside: accountToDaJson(leg.otherside),
+        amount: new Decimal(leg.amount).toFixed(10),
+        instrumentId: leg.instrumentId,
+        meta: metadataToDaJson(leg.meta),
+      })),
+      nextIterationFunding:
+        allocation.nextIterationFunding === undefined
+          ? null
+          : Object.fromEntries(
+              Object.entries(allocation.nextIterationFunding.amounts).map(([key, value]) => [
+                key,
+                new Decimal(value).toFixed(10),
+              ]),
+            ),
+    })),
+    actors,
+    extraArgs: {
+      context: { values: { ...(params.choiceContextValues ?? {}) } },
+      meta: metadataToDaJson(params.extraArgsMeta),
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

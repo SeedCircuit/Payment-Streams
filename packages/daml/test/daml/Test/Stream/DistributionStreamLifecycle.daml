@@ -1,0 +1,436 @@
+module Test.Stream.DistributionStreamLifecycle where
+
+import Daml.Script
+import DA.Date (date, Month(..))
+import DA.Time (time)
+
+import CantonStreams.Interface.Types
+import CantonStreams.Stream.StreamRecord (FundingMode(..))
+import CantonStreams.Stream.DistributionStream
+
+setup : Script (Party, ContractId DistributionStreamRecord)
+setup = do
+  operator <- allocateParty "Operator"
+  payer <- allocateParty "Payer"
+  supplier <- allocateParty "Supplier"
+  facilitator <- allocateParty "Facilitator"
+  let start = time (date 2026 Jan 1) 0 0 0
+      record = DistributionStreamRecord with
+        streamId = "distribution-001"
+        operator
+        payerAccount = AccountV2 with owner = payer; provider = None; id = ""
+        instrumentId = InstrumentIdV2 with admin = operator; id = "CC"
+        grossAmountPerPeriod = 684.93
+        periodSeconds = 86400
+        startTime = start
+        endTime = None
+        legs =
+          [ DistributionLeg with
+              legId = "supplier"
+              receiver = AccountV2 with owner = supplier; provider = None; id = ""
+              rule = PercentageBps with basisPoints = 9000
+          , DistributionLeg with
+              legId = "facilitator"
+              receiver = AccountV2 with owner = facilitator; provider = None; id = ""
+              rule = PercentageBps with basisPoints = 1000
+          ]
+        fundingMode = EscrowFunding
+        totalFunded = 0.0
+        totalGrossSettled = 0.0
+        fundingCount = 0
+        settlementCount = 0
+        currentAllocationCid = None
+        originalAllocationId = None
+        lastFundingId = None
+        lastSettlementId = None
+        fundingIds = []
+        settlementIds = []
+        recipientAuthorizations = []
+        recipientAuthorizationIds = []
+        currentSettlementDeadline = None
+        status = AwaitingFunding
+        observers = []
+  cid <- submit operator $ createCmd record
+  pure (operator, cid)
+
+authorizeReceivers
+  : Party
+  -> ContractId DistributionStreamRecord
+  -> Text
+  -> [AccountV2]
+  -> Int
+  -> Script (ContractId DistributionStreamRecord)
+authorizeReceivers _ cid _ [] _ = pure cid
+authorizeReceivers operator cid prefix (receiver :: rest) count = do
+  next <- submit operator $ exerciseCmd cid RecordDistributionRecipientAuthorization with
+    receiver
+    authorizationId = prefix <> ":recipient-authorization-" <> show count
+    allocationCid = prefix <> ":recipient-allocation-" <> show count
+    expectedCount = count
+  authorizeReceivers operator next prefix rest (count + 1)
+
+nextRecipientAuthorizations
+  : Text
+  -> [DistributionRecipientAuthorization]
+  -> [DistributionRecipientAuthorization]
+nextRecipientAuthorizations suffix =
+  map (\authorization -> authorization with
+    allocationCid = authorization.allocationCid <> suffix)
+
+replacementAuthorizations
+  : Party
+  -> ContractId DistributionStreamRecord
+  -> Text
+  -> Script [DistributionRecipientAuthorization]
+replacementAuthorizations operator cid suffix = do
+  Some record <- queryContractId operator cid
+  pure (nextRecipientAuthorizations suffix record.recipientAuthorizations)
+
+fundAndActivate : Party -> ContractId DistributionStreamRecord -> Script (ContractId DistributionStreamRecord)
+fundAndActivate operator cid = do
+  funded <- submit operator $ exerciseCmd cid RecordDistributionFunding with
+    amount = 20547.90
+    fundingId = "funding-update-1"
+    allocationCid = "allocation-1"
+    originalAllocationCid = None
+    settlementDeadline = time (date 2027 Jan 1) 0 0 0
+    expectedSequence = 1
+  Some fundedRecord <- queryContractId operator funded
+  authorized <- authorizeReceivers operator funded "funding-1"
+    (configuredReceiverAccounts fundedRecord.legs) 1
+  submit operator $ exerciseCmd authorized ActivateDistribution
+
+testDistribution90_10 : Script ()
+testDistribution90_10 = script do
+  (operator, pending) <- setup
+  active <- fundAndActivate operator pending
+  setTime (time (date 2026 Jan 8) 0 0 0)
+  nextRecipients <- replacementAuthorizations operator active "-next"
+  settled <- submit operator $ exerciseCmd active RecordDistributionSettlement with
+    grossAmount = 4794.51
+    settledLegs =
+      [ DistributionSettlementLeg with legId = "supplier"; amount = 4315.059
+      , DistributionSettlementLeg with legId = "facilitator"; amount = 479.451
+      ]
+    settlementId = "settlement-update-1"
+    settledAt = time (date 2026 Jan 8) 0 0 0
+    newAllocationCid = Some "allocation-2"
+    newRecipientAuthorizations = nextRecipients
+    expectedSequence = 1
+  Some result <- queryContractId operator settled
+  assertMsg "gross total recorded" (result.totalGrossSettled == 4794.51)
+  assertMsg "settlement sequence advanced" (result.settlementCount == 1)
+  assertMsg "allocation chain advanced" (result.currentAllocationCid == Some "allocation-2")
+
+testDistributionRejectsWrongShares : Script ()
+testDistributionRejectsWrongShares = script do
+  operator <- allocateParty "Operator"
+  payer <- allocateParty "Payer"
+  recipient <- allocateParty "Recipient"
+  let start = time (date 2026 Jan 1) 0 0 0
+  submitMustFail operator $ createCmd DistributionStreamRecord with
+    streamId = "bad-shares"
+    operator
+    payerAccount = AccountV2 with owner = payer; provider = None; id = ""
+    instrumentId = InstrumentIdV2 with admin = operator; id = "CC"
+    grossAmountPerPeriod = 100.0
+    periodSeconds = 86400
+    startTime = start
+    endTime = None
+    legs = [DistributionLeg with
+      legId = "recipient"
+      receiver = AccountV2 with owner = recipient; provider = None; id = ""
+      rule = PercentageBps with basisPoints = 9000]
+    fundingMode = EscrowFunding
+    totalFunded = 0.0
+    totalGrossSettled = 0.0
+    fundingCount = 0
+    settlementCount = 0
+    currentAllocationCid = None
+    originalAllocationId = None
+    lastFundingId = None
+    lastSettlementId = None
+    fundingIds = []
+    settlementIds = []
+    recipientAuthorizations = []
+    recipientAuthorizationIds = []
+    currentSettlementDeadline = None
+    status = AwaitingFunding
+    observers = []
+
+testDistributionRejectsWrongLegAmounts : Script ()
+testDistributionRejectsWrongLegAmounts = script do
+  (operator, pending) <- setup
+  active <- fundAndActivate operator pending
+  setTime (time (date 2026 Jan 8) 0 0 0)
+  submitMustFail operator $ exerciseCmd active RecordDistributionSettlement with
+    grossAmount = 4794.51
+    settledLegs =
+      [ DistributionSettlementLeg with legId = "supplier"; amount = 4000.0
+      , DistributionSettlementLeg with legId = "facilitator"; amount = 794.51
+      ]
+    settlementId = "settlement-update-1"
+    settledAt = time (date 2026 Jan 8) 0 0 0
+    newAllocationCid = Some "allocation-2"
+    newRecipientAuthorizations = []
+    expectedSequence = 1
+
+testDistributionRejectsEarlySettlement : Script ()
+testDistributionRejectsEarlySettlement = script do
+  (operator, pending) <- setup
+  active <- fundAndActivate operator pending
+  setTime (time (date 2026 Jan 1) 12 0 0)
+  nextRecipients <- replacementAuthorizations operator active "-next"
+  submitMustFail operator $ exerciseCmd active RecordDistributionSettlement with
+    grossAmount = 684.93
+    settledLegs = distributionAmounts 684.93 684.93
+      [ DistributionLeg with
+          legId = "supplier"
+          receiver = AccountV2 with owner = operator; provider = None; id = ""
+          rule = PercentageBps with basisPoints = 9000
+      , DistributionLeg with
+          legId = "facilitator"
+          receiver = AccountV2 with owner = operator; provider = None; id = ""
+          rule = PercentageBps with basisPoints = 1000
+      ]
+    settlementId = "too-early"
+    settledAt = time (date 2026 Jan 1) 12 0 0
+    newAllocationCid = Some "allocation-2"
+    newRecipientAuthorizations = nextRecipients
+    expectedSequence = 1
+
+testDistributionRejectsOverlappingFunding : Script ()
+testDistributionRejectsOverlappingFunding = script do
+  (operator, pending) <- setup
+  fundedOnce <- submit operator $ exerciseCmd pending RecordDistributionFunding with
+    amount = 684.93
+    fundingId = "funding-update-1"
+    allocationCid = "allocation-1"
+    originalAllocationCid = None
+    settlementDeadline = time (date 2027 Jan 1) 0 0 0
+    expectedSequence = 1
+  submitMustFail operator $ exerciseCmd fundedOnce RecordDistributionFunding with
+    amount = 684.93
+    fundingId = "funding-update-2"
+    allocationCid = "allocation-2"
+    originalAllocationCid = Some "allocation-1"
+    settlementDeadline = time (date 2027 Jan 1) 0 0 0
+    expectedSequence = 2
+
+testDistributionRejectsReplayedFundingId : Script ()
+testDistributionRejectsReplayedFundingId = script do
+  (operator, pending) <- setup
+  active <- fundAndActivate operator pending
+  setTime (time (date 2026 Jan 31) 0 0 0)
+  exhausted <- submit operator $ exerciseCmd active RecordDistributionSettlement with
+    grossAmount = 20547.90
+    settledLegs =
+      [ DistributionSettlementLeg with legId = "supplier"; amount = 18493.11
+      , DistributionSettlementLeg with legId = "facilitator"; amount = 2054.79
+      ]
+    settlementId = "settlement-update-1"
+    settledAt = time (date 2026 Jan 31) 0 0 0
+    newAllocationCid = None
+    newRecipientAuthorizations = []
+    expectedSequence = 1
+  fundedAgain <- submit operator $ exerciseCmd exhausted RecordDistributionFunding with
+    amount = 684.93
+    fundingId = "funding-update-2"
+    allocationCid = "allocation-2"
+    originalAllocationCid = Some "allocation-2"
+    settlementDeadline = time (date 2027 Jan 1) 0 0 0
+    expectedSequence = 2
+  Some fundedAgainRecord <- queryContractId operator fundedAgain
+  authorizedAgain <- authorizeReceivers operator fundedAgain "funding-2"
+    (configuredReceiverAccounts fundedAgainRecord.legs) 1
+  activeAgain <- submit operator $ exerciseCmd authorizedAgain ActivateDistribution
+  setTime (time (date 2026 Feb 1) 0 0 0)
+  exhaustedAgain <- submit operator $ exerciseCmd activeAgain RecordDistributionSettlement with
+    grossAmount = 684.93
+    settledLegs =
+      [ DistributionSettlementLeg with legId = "supplier"; amount = 616.437
+      , DistributionSettlementLeg with legId = "facilitator"; amount = 68.493
+      ]
+    settlementId = "settlement-update-2"
+    settledAt = time (date 2026 Feb 1) 0 0 0
+    newAllocationCid = None
+    newRecipientAuthorizations = []
+    expectedSequence = 2
+  submitMustFail operator $ exerciseCmd exhaustedAgain RecordDistributionFunding with
+    amount = 684.93
+    fundingId = "funding-update-1"
+    allocationCid = "allocation-3"
+    originalAllocationCid = Some "allocation-1"
+    settlementDeadline = time (date 2027 Jan 1) 0 0 0
+    expectedSequence = 3
+
+testDistributionRejectsMissingReplacementAllocation : Script ()
+testDistributionRejectsMissingReplacementAllocation = script do
+  (operator, pending) <- setup
+  active <- fundAndActivate operator pending
+  setTime (time (date 2026 Jan 2) 0 0 0)
+  submitMustFail operator $ exerciseCmd active RecordDistributionSettlement with
+    grossAmount = 684.93
+    settledLegs =
+      [ DistributionSettlementLeg with legId = "supplier"; amount = 616.437
+      , DistributionSettlementLeg with legId = "facilitator"; amount = 68.493
+      ]
+    settlementId = "settlement-update-1"
+    settledAt = time (date 2026 Jan 2) 0 0 0
+    newAllocationCid = None
+    newRecipientAuthorizations = []
+    expectedSequence = 1
+
+testDistributionRejectsReplayedSettlementId : Script ()
+testDistributionRejectsReplayedSettlementId = script do
+  (operator, pending) <- setup
+  active <- fundAndActivate operator pending
+  setTime (time (date 2026 Jan 4) 0 0 0)
+  nextRecipients1 <- replacementAuthorizations operator active "-next-1"
+  settledOnce <- submit operator $ exerciseCmd active RecordDistributionSettlement with
+    grossAmount = 684.93
+    settledLegs =
+      [ DistributionSettlementLeg with legId = "supplier"; amount = 616.437
+      , DistributionSettlementLeg with legId = "facilitator"; amount = 68.493
+      ]
+    settlementId = "settlement-update-1"
+    settledAt = time (date 2026 Jan 2) 0 0 0
+    newAllocationCid = Some "allocation-2"
+    newRecipientAuthorizations = nextRecipients1
+    expectedSequence = 1
+  nextRecipients2 <- replacementAuthorizations operator settledOnce "-next-2"
+  settledTwice <- submit operator $ exerciseCmd settledOnce RecordDistributionSettlement with
+    grossAmount = 684.93
+    settledLegs =
+      [ DistributionSettlementLeg with legId = "supplier"; amount = 616.437
+      , DistributionSettlementLeg with legId = "facilitator"; amount = 68.493
+      ]
+    settlementId = "settlement-update-2"
+    settledAt = time (date 2026 Jan 3) 0 0 0
+    newAllocationCid = Some "allocation-3"
+    newRecipientAuthorizations = nextRecipients2
+    expectedSequence = 2
+  nextRecipients3 <- replacementAuthorizations operator settledTwice "-next-3"
+  submitMustFail operator $ exerciseCmd settledTwice RecordDistributionSettlement with
+    grossAmount = 684.93
+    settledLegs =
+      [ DistributionSettlementLeg with legId = "supplier"; amount = 616.437
+      , DistributionSettlementLeg with legId = "facilitator"; amount = 68.493
+      ]
+    settlementId = "settlement-update-1"
+    settledAt = time (date 2026 Jan 4) 0 0 0
+    newAllocationCid = Some "allocation-4"
+    newRecipientAuthorizations = nextRecipients3
+    expectedSequence = 3
+
+testDistributionFixedAmountsScaleWithBatch : Script ()
+testDistributionFixedAmountsScaleWithBatch = script do
+  operator <- allocateParty "FixedOperator"
+  payer <- allocateParty "FixedPayer"
+  supplier <- allocateParty "FixedSupplier"
+  facilitator <- allocateParty "FixedFacilitator"
+  let start = time (date 2026 Jan 1) 0 0 0
+      legs =
+        [ DistributionLeg with
+            legId = "supplier"
+            receiver = AccountV2 with owner = supplier; provider = None; id = ""
+            rule = FixedAmountPerPeriod with amount = 90.0
+        , DistributionLeg with
+            legId = "facilitator"
+            receiver = AccountV2 with owner = facilitator; provider = None; id = ""
+            rule = FixedAmountPerPeriod with amount = 10.0
+        ]
+  pending <- submit operator $ createCmd DistributionStreamRecord with
+    streamId = "fixed-distribution"
+    operator
+    payerAccount = AccountV2 with owner = payer; provider = None; id = ""
+    instrumentId = InstrumentIdV2 with admin = operator; id = "CC"
+    grossAmountPerPeriod = 100.0
+    periodSeconds = 86400
+    startTime = start
+    endTime = None
+    legs
+    fundingMode = EscrowFunding
+    totalFunded = 1000.0
+    totalGrossSettled = 0.0
+    fundingCount = 1
+    settlementCount = 0
+    currentAllocationCid = Some "allocation-fixed-1"
+    originalAllocationId = Some "allocation-fixed-1"
+    lastFundingId = Some "funding-fixed-1"
+    lastSettlementId = None
+    fundingIds = ["funding-fixed-1"]
+    settlementIds = []
+    recipientAuthorizations =
+      [ DistributionRecipientAuthorization with
+          receiver = AccountV2 with owner = supplier; provider = None; id = ""
+          authorizationId = "fixed-supplier-authorization"
+          allocationCid = "fixed-supplier-allocation"
+      , DistributionRecipientAuthorization with
+          receiver = AccountV2 with owner = facilitator; provider = None; id = ""
+          authorizationId = "fixed-facilitator-authorization"
+          allocationCid = "fixed-facilitator-allocation"
+      ]
+    recipientAuthorizationIds =
+      ["fixed-supplier-authorization", "fixed-facilitator-authorization"]
+    currentSettlementDeadline = Some (time (date 2027 Jan 1) 0 0 0)
+    status = AwaitingRecipients
+    observers = []
+  active <- submit operator $ exerciseCmd pending ActivateDistribution
+  setTime (time (date 2026 Jan 4) 0 0 0)
+  nextRecipients <- replacementAuthorizations operator active "-next"
+  settled <- submit operator $ exerciseCmd active RecordDistributionSettlement with
+    grossAmount = 300.0
+    settledLegs =
+      [ DistributionSettlementLeg with legId = "supplier"; amount = 270.0
+      , DistributionSettlementLeg with legId = "facilitator"; amount = 30.0
+      ]
+    settlementId = "settlement-fixed-1"
+    settledAt = time (date 2026 Jan 4) 0 0 0
+    newAllocationCid = Some "allocation-fixed-2"
+    newRecipientAuthorizations = nextRecipients
+    expectedSequence = 1
+  Some result <- queryContractId operator settled
+  assertMsg "fixed amount batch recorded" (result.totalGrossSettled == 300.0)
+
+testDistributionRejectsMixedRules : Script ()
+testDistributionRejectsMixedRules = script do
+  operator <- allocateParty "MixedOperator"
+  payer <- allocateParty "MixedPayer"
+  recipient <- allocateParty "MixedRecipient"
+  let start = time (date 2026 Jan 1) 0 0 0
+  submitMustFail operator $ createCmd DistributionStreamRecord with
+    streamId = "mixed-rules"
+    operator
+    payerAccount = AccountV2 with owner = payer; provider = None; id = ""
+    instrumentId = InstrumentIdV2 with admin = operator; id = "CC"
+    grossAmountPerPeriod = 100.0
+    periodSeconds = 86400
+    startTime = start
+    endTime = None
+    legs =
+      [ DistributionLeg with
+          legId = "percentage"
+          receiver = AccountV2 with owner = recipient; provider = None; id = ""
+          rule = PercentageBps with basisPoints = 9000
+      , DistributionLeg with
+          legId = "fixed"
+          receiver = AccountV2 with owner = recipient; provider = None; id = "fee"
+          rule = FixedAmountPerPeriod with amount = 10.0
+      ]
+    fundingMode = EscrowFunding
+    totalFunded = 0.0
+    totalGrossSettled = 0.0
+    fundingCount = 0
+    settlementCount = 0
+    currentAllocationCid = None
+    originalAllocationId = None
+    lastFundingId = None
+    lastSettlementId = None
+    fundingIds = []
+    settlementIds = []
+    recipientAuthorizations = []
+    recipientAuthorizationIds = []
+    currentSettlementDeadline = None
+    status = AwaitingFunding
+    observers = []

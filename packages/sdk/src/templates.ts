@@ -116,6 +116,22 @@ export const TEMPLATE_STREAM_ADMIN: TemplateId = {
   entityName: 'StreamAdmin',
 };
 
+export const TEMPLATE_DISTRIBUTION_STREAM: TemplateId = {
+  packageId: MAIN_PACKAGE_ID,
+  moduleName: 'CantonStreams.Stream.DistributionStream',
+  entityName: 'DistributionStreamRecord',
+};
+
+export const CHOICE_RECORD_DISTRIBUTION_FUNDING = 'RecordDistributionFunding';
+export const CHOICE_RECORD_DISTRIBUTION_RECIPIENT_AUTHORIZATION =
+  'RecordDistributionRecipientAuthorization';
+export const CHOICE_ACTIVATE_DISTRIBUTION = 'ActivateDistribution';
+export const CHOICE_RECORD_DISTRIBUTION_SETTLEMENT = 'RecordDistributionSettlement';
+export const CHOICE_PAUSE_DISTRIBUTION = 'PauseDistribution';
+export const CHOICE_RESUME_DISTRIBUTION = 'ResumeDistribution';
+export const CHOICE_COMPLETE_DISTRIBUTION = 'CompleteDistribution';
+export const CHOICE_CANCEL_DISTRIBUTION = 'CancelDistribution';
+
 /**
  * Transitional V1 lane: per-cycle allocation-request shim implementing
  * the CIP-56 V1 `AllocationRequest` interface. Lives in its OWN DAR

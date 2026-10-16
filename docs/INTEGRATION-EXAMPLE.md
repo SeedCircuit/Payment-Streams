@@ -69,7 +69,7 @@ This gives the proxy a least-privilege service principal: it can read any party'
 ```bash
 # Upload
 daml ledger upload-dar --host acme-validator --port 5001 \
-  packages/daml/main/.daml/dist/canton-streams-1.3.0.dar
+  packages/daml/main/.daml/dist/canton-streams-1.4.0.dar
 
 # Vet on the synchronizer (see docs/DEPLOYMENT.md for the console snippet)
 

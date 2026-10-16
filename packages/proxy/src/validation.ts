@@ -21,6 +21,18 @@ function hasNewline(value: string): boolean {
   return /[\r\n]/.test(value);
 }
 
+export function requireNonEmptyObject(value: unknown, field: string): Record<string, unknown> {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    Object.keys(value).length === 0
+  ) {
+    fail(`Invalid ${field}: expected a non-empty JSON object`);
+  }
+  return value as Record<string, unknown>;
+}
+
 /** Parse to a finite Decimal strictly > 0; reject empty/NaN/Infinity/<= 0. */
 export function requireAmount(value: unknown, field: string): Decimal {
   if (typeof value !== 'string' && typeof value !== 'number') {

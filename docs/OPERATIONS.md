@@ -63,6 +63,7 @@ Core environment (see [DEPLOYMENT.md](DEPLOYMENT.md) for the full table):
 | `CANTON_STREAMS_PACKAGE_ID` | Vetted package id of the canton-streams DAR |
 | `CANTON_JSON_API_URL` | JSON Ledger API base URL (required for readiness checks) |
 | `PROXY_AUTH_MODE` | `jwt` (default, production) or `dev` |
+| `PROXY_DEPLOYMENT_TARGET` | Set `mainnet` to activate the fail-closed MainNet profile |
 | `PROXY_OIDC_ISSUER` / `PROXY_JWT_AUDIENCE` | JWT verification config (jwt mode) |
 | `PROXY_SERVICE_TOKEN` / `PROXY_ESCROW_OPERATOR` | Service-tier auth for finalize / auto-withdraw |
 | `ALLOWED_ORIGINS` | CORS allow-list (required in jwt mode) |

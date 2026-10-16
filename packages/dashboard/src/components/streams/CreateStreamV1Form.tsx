@@ -8,7 +8,7 @@
  */
 
 import { useMemo, useState, type CSSProperties } from 'react';
-import { useNavigate, useLocation } from 'react-router';
+import { Link, useNavigate, useLocation } from 'react-router';
 import { useForm, FormProvider, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Check, Loader2, Zap } from 'lucide-react';
@@ -20,6 +20,8 @@ import { FormField } from '../forms/FormField.js';
 import { FormError } from '../forms/FormError.js';
 import { AssetSelect } from './AssetSelect.js';
 import { fmtCc, fmtAmount, instrumentLabel, displayName } from '../../lib/format.js';
+import { getStoredExternalRef, clearStoredExternalRef } from '../../lib/externalRef.js';
+import { ExternalRefBadge } from '../common/ExternalRefBadge.js';
 import {
   createStreamV1Schema,
   type CreateStreamV1Values,
@@ -99,6 +101,7 @@ export function CreateStreamV1Form() {
       return;
     }
     setSubmitError(null);
+    const externalRef = getStoredExternalRef();
     const params: V1CreateStreamParams = {
       payerParty: party,
       recipientParty: data.recipientParty.trim(),
@@ -108,9 +111,11 @@ export function CreateStreamV1Form() {
       // Only send a key when the picker resolved a whitelisted asset; absent ⇒
       // the proxy defaults to Canton Coin.
       ...(data.assetKey ? { assetKey: data.assetKey } : {}),
+      ...(externalRef ? { externalRef } : {}),
     };
     try {
       const view = await createStream.mutateAsync(params);
+      if (externalRef) clearStoredExternalRef();
       navigate(`/v1/streams/${encodeURIComponent(view.agreement.agreementId)}`);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not create the stream');
@@ -138,6 +143,7 @@ export function CreateStreamV1Form() {
   return (
     <FormProvider {...methods}>
       <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 560 }}>
+        <ExternalRefBadge />
         <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
           {/* Payer — read-only, from the wallet */}
           <div>
@@ -160,6 +166,14 @@ export function CreateStreamV1Form() {
           {/* Asset picker — writes the whitelisted `assetKey` sent to the proxy.
               Whitelist-only (no custom): the V1 lane rejects unknown keys. */}
           <AssetSelect keyName="assetKey" allowCustom={false} />
+          {!isCc && (
+            <div style={{ fontSize: 12.5, color: 'var(--fg-3)', lineHeight: 1.5 }}>
+              Each {unit} payment arrives as an offer the recipient has to accept in their wallet, and the
+              stream waits for that before sending the next one. For regular {unit} payments, a{' '}
+              <Link to="/distributions">distribution</Link> is smoother: the recipient approves once and every
+              payment lands automatically.
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
             <FormField

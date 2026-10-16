@@ -4,3 +4,16 @@ packages:
   - "packages/proxy"
   - "packages/dashboard"
   - "packages/executor"
+
+allowBuilds:
+  esbuild: true
+  msw: true
+  protobufjs: true
+
+patchedDependencies:
+  "@partylayer/adapter-loop@0.5.0": "patches/@partylayer__adapter-loop@0.5.0.patch"
+
+onlyBuiltDependencies:
+  - esbuild
+  - msw
+  - protobufjs

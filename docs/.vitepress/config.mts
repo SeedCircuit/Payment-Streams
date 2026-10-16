@@ -75,6 +75,7 @@ export default defineConfig({
         text: 'Operate',
         items: [
           { text: 'Deployment', link: '/DEPLOYMENT' },
+          { text: 'MainNet Readiness', link: '/MAINNET-READINESS' },
           { text: 'Operations Runbook', link: '/OPERATIONS' },
           { text: 'Threat Model', link: '/THREAT-MODEL' },
         ],
@@ -117,6 +118,7 @@ export default defineConfig({
         collapsed: false,
         items: [
           { text: 'Deployment Guide', link: '/DEPLOYMENT' },
+          { text: 'MainNet Readiness', link: '/MAINNET-READINESS' },
           { text: 'Operations Runbook', link: '/OPERATIONS' },
           { text: 'Wallet-Backed E2E Harness', link: '/E2E-HARNESS' },
           { text: 'V1 Lane Testing', link: '/V1-LANE-TESTING' },

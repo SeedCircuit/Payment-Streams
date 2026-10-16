@@ -52,7 +52,8 @@
 
 import { readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
 import { acquireStoreLock, releaseStoreLock } from './store-lock.js';
-import { getSupportedAssets } from './assets.js';
+import { getSupportedAssets, resolveAssetForInstrument } from './assets.js';
+import { activeContractsOverWebSocket, isAcsListLimit } from './acs-stream.js';
 
 // Standardized token-standard TransferInstruction interface package NAMES. The
 // ledger ACS InterfaceFilter requires the `#package-name` form; the exercise
@@ -65,10 +66,8 @@ export const TI_INTERFACE_NAME_V2 =
   '#splice-api-token-transfer-instruction-v2:Splice.Api.Token.TransferInstructionV2:TransferInstruction';
 
 // ---------------------------------------------------------------------------
-// Configuration (V1 lane env — see the task's envAndIds spec)
+// Configuration
 // ---------------------------------------------------------------------------
-
-const env = (k: string, d = ''): string => String(process.env[k] ?? d).trim();
 
 export interface V1LaneConfig {
   /** JSON Ledger API v2 base of the participant hosting the payer party. */
@@ -249,6 +248,7 @@ export type ArrearsPolicy = 'catch-up' | 'skip-missed';
 export interface V1Agreement {
   agreementId: string;
   appId?: string;
+  externalRef?: string;
   payerParty: string;
   recipientParty: string;
   ratePerPeriod: string;
@@ -408,6 +408,13 @@ export async function ledger(
   });
   const t = await res.text();
   if (!res.ok) {
+    if (method === 'POST' && isAcsListLimit(res.status, path, t)) {
+      try {
+        return await activeContractsOverWebSocket(config.apiUrl, config.ledgerToken, body);
+      } catch (err) {
+        throw new V1LaneError(502, 'ledger_error', `${method} ${path}: ${(err as Error).message}`);
+      }
+    }
     const d = t.length > 900 ? `${t.slice(0, 300)} … ${t.slice(-500)}` : t;
     throw new V1LaneError(502, 'ledger_error', `${method} ${path} ${res.status}: ${d}`);
   }
@@ -881,6 +888,118 @@ export async function verifyHoldingDeliveryOnScan(
  * withdraw, which reclaims funds rather than delivering them, so there is nothing
  * to credit — only the tracked offer's consumption to confirm, so a stray update
  * can't mark the wrong offer withdrawn. */
+export function participantUpdateConsumesWith(update: any, cid: string, choice: string): boolean {
+  const events: any[] = update?.update?.Transaction?.value?.events ?? [];
+  return events.some((e) => {
+    const ex = e?.ExercisedEvent;
+    return ex?.contractId === cid && ex.consuming === true && ex.choice === choice;
+  });
+}
+
+const OFFER_ACCEPT = 'TransferInstruction_Accept';
+const OFFER_WITHDRAW = 'TransferInstruction_Withdraw';
+const OFFER_REJECT = 'TransferInstruction_Reject';
+
+function partyWildcardFormat(readers: string[]) {
+  const wildcard = { cumulative: [{ identifierFilter: { WildcardFilter: { value: { includeCreatedEventBlob: false } } } }] };
+  return { filtersByParty: Object.fromEntries(readers.map((p) => [p, wildcard])), verbose: false };
+}
+
+async function hostedParties(config: V1LaneConfig, parties: string[]): Promise<string[]> {
+  const readers: string[] = [];
+  for (const p of parties) if (p && (await partyIsLocal(config, p))) readers.push(p);
+  return readers;
+}
+
+export type OfferFate =
+  | { kind: 'live' }
+  | { kind: 'accepted' | 'returned'; updateId: string }
+  | { kind: 'unknown' };
+
+export function classifyOfferConsumption(update: unknown, cid: string): OfferFate {
+  const updateId = String((update as any)?.update?.Transaction?.value?.updateId ?? '');
+  if (participantUpdateConsumesWith(update, cid, OFFER_ACCEPT)) return { kind: 'accepted', updateId };
+  if (
+    participantUpdateConsumesWith(update, cid, OFFER_WITHDRAW) ||
+    participantUpdateConsumesWith(update, cid, OFFER_REJECT)
+  ) {
+    return { kind: 'returned', updateId };
+  }
+  return { kind: 'unknown' };
+}
+
+async function offerFate(config: V1LaneConfig, cid: string, parties: string[]): Promise<OfferFate> {
+  const readers = await hostedParties(config, parties);
+  if (readers.length === 0) return { kind: 'unknown' };
+  const eventFormat = partyWildcardFormat(readers);
+  let events: any;
+  try {
+    events = await ledger(config, 'POST', '/v2/events/events-by-contract-id', { contractId: cid, eventFormat });
+  } catch {
+    return { kind: 'unknown' };
+  }
+  const offset = events?.archived?.archivedEvent?.offset;
+  if (offset === undefined || offset === null) return events?.created ? { kind: 'live' } : { kind: 'unknown' };
+  try {
+    const update = await ledger(config, 'POST', '/v2/updates/update-by-offset', {
+      offset,
+      updateFormat: { includeTransactions: { eventFormat, transactionShape: 'TRANSACTION_SHAPE_LEDGER_EFFECTS' } },
+    });
+    return classifyOfferConsumption(update, cid);
+  } catch {
+    return { kind: 'unknown' };
+  }
+}
+
+async function verifyContractConsumedOnParticipant(
+  config: V1LaneConfig,
+  updateId: string,
+  cid: string | undefined,
+  parties: string[],
+  choice: string,
+): Promise<void> {
+  if (!cid) {
+    throw new V1LaneError(
+      422,
+      'settlement_mismatch',
+      `no tracked offer contract to bind update ${updateId} to; refusing to record.`,
+    );
+  }
+  const readers = await hostedParties(config, parties);
+  if (readers.length === 0) {
+    throw new V1LaneError(
+      422,
+      'settlement_unverified',
+      `neither stream party is hosted on this participant, so update ${updateId} cannot be confirmed; refusing to record.`,
+    );
+  }
+  let update: unknown;
+  try {
+    update = await ledger(config, 'POST', '/v2/updates/update-by-id', {
+      updateId,
+      updateFormat: {
+        includeTransactions: {
+          eventFormat: partyWildcardFormat(readers),
+          transactionShape: 'TRANSACTION_SHAPE_LEDGER_EFFECTS',
+        },
+      },
+    });
+  } catch {
+    throw new V1LaneError(
+      422,
+      'settlement_unverified',
+      `update ${updateId} is not visible on this participant; refusing to record.`,
+    );
+  }
+  if (!participantUpdateConsumesWith(update, cid, choice)) {
+    throw new V1LaneError(
+      422,
+      'settlement_mismatch',
+      `update ${updateId} does not ${choice === OFFER_ACCEPT ? 'accept' : 'withdraw'} the tracked offer; refusing to record.`,
+    );
+  }
+}
+
 async function verifyContractConsumedOnScan(
   config: V1LaneConfig,
   updateId: string,
@@ -965,10 +1084,20 @@ interface Holding {
   amount: number;
 }
 
+export function holdingMatchesInstrument(
+  createArgument: any,
+  instrument: { id: string; admin: string },
+): boolean {
+  const inst = createArgument?.instrument;
+  if (!inst || typeof inst !== 'object') return true;
+  return inst.id === instrument.id && (inst.source ?? inst.admin) === instrument.admin;
+}
+
 async function senderHoldings(
   config: V1LaneConfig,
   party: string,
   holdingTemplateId?: string,
+  instrument?: { id: string; admin: string },
 ): Promise<Holding[]> {
   const { offset } = await ledger(config, 'GET', '/v2/state/ledger-end');
   const rows: any[] = await ledger(config, 'POST', '/v2/state/active-contracts', {
@@ -997,6 +1126,7 @@ async function senderHoldings(
     .map((r) => r.contractEntry?.JsActiveContract)
     .filter(Boolean)
     .filter((a) => a.createdEvent.createArgument.owner === party)
+    .filter((a) => !instrument || holdingMatchesInstrument(a.createdEvent.createArgument, instrument))
     // A locked holding can't be a transfer input (it's collateral in a pending
     // transfer/allocation). Amulet has no such field so CC is unaffected; a
     // registry holding (USDCx) sets `lock` while locked.
@@ -1082,6 +1212,7 @@ export interface ReceivedPendingOffer {
   amount: string;
   sender: string;
   instrumentId: string;
+  instrumentAdmin?: string;
   requestedAt?: string;
   executeBefore?: string;
   /** True once `executeBefore` has passed: the on-ledger accept deadline is
@@ -1118,6 +1249,19 @@ function offerTransfer(ev: any): any {
     if (v?.viewValue?.transfer) return v.viewValue.transfer;
   }
   return {};
+}
+
+export function registryBaseForInstrument(instrument: { admin: string; id: string }): string | undefined {
+  return resolveAssetForInstrument(instrument)?.registryApiUrl || undefined;
+}
+
+export function accountParty(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    const owner = (value as { owner?: unknown }).owner;
+    if (typeof owner === 'string') return owner;
+  }
+  return '';
 }
 
 async function incomingOffers(config: V1LaneConfig, party: string): Promise<ReceivedPendingOffer[]> {
@@ -1158,15 +1302,18 @@ async function incomingOffers(config: V1LaneConfig, party: string): Promise<Rece
     const ev = r.contractEntry?.JsActiveContract?.createdEvent;
     if (!ev) continue;
     const tr = offerTransfer(ev);
-    if (tr.receiver !== party) continue;
+    if (accountParty(tr.receiver) !== party) continue;
     byCid.set(ev.contractId, {
       transferInstructionCid: ev.contractId,
       amount: String(tr.amount ?? '0'),
-      sender: String(tr.sender ?? ''),
+      sender: accountParty(tr.sender),
       instrumentId:
         tr.instrumentId && typeof tr.instrumentId === 'object'
           ? String(tr.instrumentId.id ?? 'Amulet')
           : String(tr.instrumentId ?? 'Amulet'),
+      ...(tr.instrumentId && typeof tr.instrumentId === 'object' && tr.instrumentId.admin
+        ? { instrumentAdmin: String(tr.instrumentId.admin) }
+        : {}),
       requestedAt: tr.requestedAt,
       executeBefore: tr.executeBefore,
       expired: !!tr.executeBefore && Date.parse(tr.executeBefore) < Date.now(),
@@ -1347,6 +1494,7 @@ export async function findEscrowDepositOffer(
 export async function escrowOwnedHoldings(
   config: V1LaneConfig,
   holdingTemplateId: string,
+  instrument?: { id: string; admin: string },
 ): Promise<number> {
   if (!config.escrowParty || !holdingTemplateId) return 0;
   const { offset } = await ledger(config, 'GET', '/v2/state/ledger-end');
@@ -1371,6 +1519,7 @@ export async function escrowOwnedHoldings(
   for (const r of rows) {
     const a = r.contractEntry?.JsActiveContract?.createdEvent?.createArgument;
     if (!a || a.lock != null || String(a.owner) !== config.escrowParty) continue;
+    if (instrument && !holdingMatchesInstrument(a, instrument)) continue;
     const amt = a.amount;
     sum += amt && typeof amt === 'object' ? Number(amt.initialAmount ?? 0) : Number(amt ?? 0);
   }
@@ -1492,6 +1641,7 @@ function streamMeta(agreement: V1Agreement, ref: string): { values: Record<strin
       'cantonstreams.dev/v': '1',
       ...(agreement.appId ? { 'cantonstreams.dev/app': agreement.appId } : {}),
       'cantonstreams.dev/agreement': agreement.agreementId,
+      ...(agreement.externalRef ? { 'cantonstreams.dev/external-ref': agreement.externalRef } : {}),
     },
   };
 }
@@ -1530,6 +1680,25 @@ function selectPendingRecord(
   return rows
     .filter((r) => r.status === 'pending')
     .sort((a, b) => a.cycle - b.cycle)[0];
+}
+
+function creditAcceptedOffer(
+  state: V1StreamState,
+  record: PendingTransferRecord,
+  updateId: string,
+  amount: number,
+): void {
+  state.settled = Number((state.settled + amount).toFixed(10));
+  state.cycles = Math.max(state.cycles, record.cycle);
+  state.history.push({
+    at: new Date().toISOString(),
+    amount: amount.toFixed(10),
+    ref: record.ref,
+    updateId,
+  });
+  if (state.history.length > 500) state.history.splice(0, state.history.length - 500);
+  record.status = 'accepted';
+  record.finalUpdateId = updateId;
 }
 
 function nextClaimCycle(state: V1StreamState): number {
@@ -1627,7 +1796,11 @@ export async function prepareSettleCommand(
   const ref = `${agreement.agreementId}:cycle-${cycleNo}`;
   const inst = resolveInstrument(config, agreement);
   const holdings =
-    holdingsIn ?? (await senderHoldings(config, agreement.payerParty, inst.holdingTemplateId));
+    holdingsIn ??
+    (await senderHoldings(config, agreement.payerParty, inst.holdingTemplateId, {
+      id: inst.id,
+      admin: inst.admin,
+    }));
   const total = holdings.reduce((s, h) => s + h.amount, 0);
   if (total < amount) {
     throw new V1LaneError(
@@ -1708,7 +1881,11 @@ export async function prepareSettleCommandV2(
   const ref = `${agreement.agreementId}:cycle-${cycleNo}`;
   const inst = resolveInstrument(config, agreement);
   const holdings =
-    holdingsIn ?? (await senderHoldings(config, agreement.payerParty, inst.holdingTemplateId));
+    holdingsIn ??
+    (await senderHoldings(config, agreement.payerParty, inst.holdingTemplateId, {
+      id: inst.id,
+      admin: inst.admin,
+    }));
   const total = holdings.reduce((s, h) => s + h.amount, 0);
   if (total < amount) {
     throw new V1LaneError(
@@ -2026,6 +2203,7 @@ export async function settleCycle(
   agreement: V1Agreement,
   amount: number,
   cycleNo: number,
+  attempt = 0,
 ): Promise<SettleResult> {
   const prepareFn =
     resolveInstrument(config, agreement).transferVersion === 'v2'
@@ -2047,7 +2225,7 @@ export async function settleCycle(
     // deduplicates a replay of the same committed commandId. The agreementId is
     // the stream id for a direct settle and `${escrowId}:release|deposit` for an
     // escrow cycle, so each logical cycle has its own stable id.
-    commandId: `proxy-v1-xfer-${agreement.agreementId}-${cycleNo}`,
+    commandId: `proxy-v1-xfer-${agreement.agreementId}-${cycleNo}${attempt ? `-r${attempt}` : ''}`,
     actAs: [agreement.payerParty],
     readAs: [],
     ...(config.userId ? { userId: config.userId } : {}),
@@ -2439,6 +2617,7 @@ function updateIdRecordedElsewhere(store: V1Store, streamId: string, updateId: s
 export interface CreateV1StreamInput {
   streamId?: string;
   appId?: string;
+  externalRef?: string;
   payerParty: string;
   recipientParty: string;
   /** Amount accrued per cadence period (decimal string). Alias: amount. */
@@ -2646,6 +2825,7 @@ export class V1LaneService {
     const agreement: V1Agreement = {
       agreementId: streamId,
       ...(input.appId ? { appId: input.appId } : {}),
+      ...(input.externalRef ? { externalRef: input.externalRef } : {}),
       payerParty: input.payerParty,
       recipientParty: input.recipientParty,
       ratePerPeriod,
@@ -2710,7 +2890,17 @@ export class V1LaneService {
     if (!transferInstructionCid) {
       throw new V1LaneError(400, 'missing_cid', 'transferInstructionCid is required');
     }
-    return acceptOfferByCid(this.config, callerParty, transferInstructionCid);
+    const offer = (await incomingOffers(this.config, callerParty)).find(
+      (o) => o.transferInstructionCid === transferInstructionCid,
+    );
+    return acceptOfferByCid(
+      this.config,
+      callerParty,
+      transferInstructionCid,
+      offer?.instrumentAdmin
+        ? registryBaseForInstrument({ admin: offer.instrumentAdmin, id: offer.instrumentId })
+        : undefined,
+    );
   }
 
   /** Model 2 (wallet party, e.g. a Loop party NOT hosted on this participant):
@@ -2721,6 +2911,7 @@ export class V1LaneService {
   async prepareAcceptReceived(
     callerParty: string | undefined,
     transferInstructionCid: string,
+    instrument?: { admin: string; id: string },
   ): Promise<{ command: unknown; disclosedContracts: unknown[]; actAs: string }> {
     if (!callerParty) {
       throw new V1LaneError(401, 'unauthenticated', 'a caller party is required');
@@ -2742,7 +2933,13 @@ export class V1LaneService {
       createdAt: new Date().toISOString(),
       status: 'pending',
     };
-    const prepared = await prepareInstructionActionCommand(this.config, record, 'accept', callerParty);
+    const prepared = await prepareInstructionActionCommand(
+      this.config,
+      record,
+      'accept',
+      callerParty,
+      instrument ? registryBaseForInstrument(instrument) : undefined,
+    );
     return { command: prepared.command, disclosedContracts: prepared.disclosedContracts, actAs: callerParty };
   }
 
@@ -2846,6 +3043,47 @@ export class V1LaneService {
     }
   }
 
+  private async reconcileOutstandingOffers(
+    store: V1Store,
+    agreement: V1Agreement,
+    st: V1StreamState,
+  ): Promise<PendingTransferRecord | undefined> {
+    const credited: { amount: number; updateId: string }[] = [];
+    let changed = false;
+    let blocker: PendingTransferRecord | undefined;
+    for (const record of pendingRecords(st)) {
+      if (record.status !== 'pending') continue;
+      const fate = await offerFate(this.config, record.transferInstructionCid, [
+        agreement.payerParty,
+        agreement.recipientParty,
+      ]);
+      if (fate.kind === 'accepted') {
+        creditAcceptedOffer(st, record, fate.updateId, Number(record.amount));
+        credited.push({ amount: Number(record.amount), updateId: fate.updateId });
+        changed = true;
+      } else if (fate.kind === 'returned') {
+        record.status = 'withdrawn';
+        record.finalUpdateId = fate.updateId;
+        changed = true;
+      } else {
+        blocker = record;
+        break;
+      }
+    }
+    if (changed) saveStore(this.config, store);
+    for (const c of credited) {
+      try {
+        await syncStreamAdmin(this.config, agreement, c.amount, c.updateId);
+      } catch (e) {
+        console.warn(
+          `[v1] reconciled offer sync failed stream=${agreement.agreementId}:`,
+          String((e as Error)?.message ?? e).slice(0, 160),
+        );
+      }
+    }
+    return blocker;
+  }
+
   /**
    * The actual settlement. Mirrors the scheduler's tick() ordering exactly:
    *   compute due → settleCycle → record settled total BEFORE syncStreamAdmin.
@@ -2869,6 +3107,11 @@ export class V1LaneService {
     const st = store.state[streamId] ?? emptyState();
     store.state[streamId] = st;
 
+    const blocker = await this.reconcileOutstandingOffers(store, agreement, st);
+    if (blocker) {
+      return { settled: false, reason: 'pending_acceptance', cycle: st.cycles, pending: blocker };
+    }
+
     const nowMs = Date.now();
     let due: number;
     if (opts.amount !== undefined) {
@@ -2889,7 +3132,9 @@ export class V1LaneService {
       return { settled: false, reason: 'nothing_due' };
     }
 
-    const result = await settleCycle(this.config, agreement, due, st.cycles + 1);
+    const cycleNo = st.cycles + 1;
+    const attempt = pendingRecords(st).filter((r) => r.cycle === cycleNo).length;
+    const result = await settleCycle(this.config, agreement, due, cycleNo, attempt);
 
     // Classify the on-chain outcome before crediting the cycle (mirrors
     // recordSettle): a created TransferInstruction means the receiver had no
@@ -2898,7 +3143,6 @@ export class V1LaneService {
     // settled/cycles or report "settled" — otherwise the stream over-reports an
     // undelivered cycle as paid.
     if (result.pendingInstructionCid) {
-      const cycleNo = st.cycles + 1;
       const rows = pendingRecords(st);
       let record = rows.find((r) => r.transferInstructionCid === result.pendingInstructionCid);
       if (!record) {
@@ -2983,12 +3227,23 @@ export class V1LaneService {
     streamId: string,
     opts: { force?: boolean; amount?: string; holdings?: HoldingInput[] } = {},
   ): Promise<({ prepared: true } & PreparedSettle) | { prepared: false; reason: string }> {
+    return this.runLocked(streamId, () => this.prepareSettleImpl(streamId, opts));
+  }
+
+  private async prepareSettleImpl(
+    streamId: string,
+    opts: { force?: boolean; amount?: string; holdings?: HoldingInput[] },
+  ): Promise<({ prepared: true } & PreparedSettle) | { prepared: false; reason: string }> {
     const store = loadStore(this.config);
     const agreement = store.agreements[streamId];
     if (!agreement) {
       throw new V1LaneError(404, 'stream_not_found', `V1 stream "${streamId}" not found`);
     }
     const st = store.state[streamId] ?? emptyState();
+    store.state[streamId] = st;
+    if (await this.reconcileOutstandingOffers(store, agreement, st)) {
+      return { prepared: false, reason: 'pending_acceptance' };
+    }
     const nowMs = Date.now();
     let due: number;
     if (opts.amount !== undefined) {
@@ -3635,23 +3890,26 @@ export class V1LaneService {
     // update deliver at least the tracked amount to the recipient; credit the
     // on-chain amount, so a dust or unrelated transfer can't mark the cycle
     // accepted for the full pending figure.
-    const { amount: verifiedAmount } = await verifyConsummationOnScan(configForStream(this.config, agreement), input.updateId, {
-      trackedCid: record.transferInstructionCid || input.transferInstructionCid,
-      recipient: agreement.recipientParty,
-      minAmount: Number(record.amount),
-    });
+    const offerCid = record.transferInstructionCid || input.transferInstructionCid;
+    let verifiedAmount: number;
+    if (resolveInstrument(this.config, agreement).id !== this.config.instrumentId) {
+      await verifyContractConsumedOnParticipant(
+        this.config,
+        input.updateId,
+        offerCid,
+        [agreement.payerParty, agreement.recipientParty],
+        OFFER_ACCEPT,
+      );
+      verifiedAmount = Number(record.amount);
+    } else {
+      ({ amount: verifiedAmount } = await verifyConsummationOnScan(
+        configForStream(this.config, agreement),
+        input.updateId,
+        { trackedCid: offerCid, recipient: agreement.recipientParty, minAmount: Number(record.amount) },
+      ));
+    }
     const amount = Math.min(Number(record.amount), verifiedAmount);
-    st.settled = Number((st.settled + amount).toFixed(10));
-    st.cycles = Math.max(st.cycles, record.cycle);
-    st.history.push({
-      at: new Date().toISOString(),
-      amount: amount.toFixed(10),
-      ref: record.ref,
-      updateId: input.updateId,
-    });
-    if (st.history.length > 500) st.history.splice(0, st.history.length - 500);
-    record.status = 'accepted';
-    record.finalUpdateId = input.updateId;
+    creditAcceptedOffer(st, record, input.updateId, amount);
     saveStore(this.config, store);
 
     let adminSynced = false;
@@ -3793,11 +4051,18 @@ export class V1LaneService {
     // A withdraw reclaims the sender's locked funds — nothing is delivered to the
     // recipient, so nothing is credited. Confirm the committed update actually
     // consumed this offer, so a stray update can't mark it withdrawn.
-    await verifyContractConsumedOnScan(
-      this.config,
-      input.updateId,
-      record.transferInstructionCid || input.transferInstructionCid,
-    );
+    const offerCid = record.transferInstructionCid || input.transferInstructionCid;
+    if (resolveInstrument(this.config, agreement).id !== this.config.instrumentId) {
+      await verifyContractConsumedOnParticipant(
+        this.config,
+        input.updateId,
+        offerCid,
+        [agreement.payerParty, agreement.recipientParty],
+        OFFER_WITHDRAW,
+      );
+    } else {
+      await verifyContractConsumedOnScan(this.config, input.updateId, offerCid);
+    }
     record.status = 'withdrawn';
     record.finalUpdateId = input.updateId;
     saveStore(this.config, store);
