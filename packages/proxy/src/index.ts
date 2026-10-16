@@ -132,7 +132,12 @@ import {
   syncIterationFlowViaJson,
   markCancelledFlowAdminViaJson,
 } from './v2-write.js';
-import { getSupportedAssets, resolveStreamAsset } from './assets.js';
+import {
+  getSupportedAssets,
+  resolveAssetForInstrument,
+  resolveInstrumentRegistry,
+  resolveStreamAsset,
+} from './assets.js';
 import {
   EscrowLane,
   startEscrowStreamer,
@@ -194,6 +199,33 @@ const DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID =
 const DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID =
   process.env['V2_SETTLEMENT_FACTORY_INTERFACE_ID']?.trim() ||
   DEFAULT_DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID;
+
+function distributionRegistryFor(instrument: { admin: string; id: string }): {
+  registryApiUrl: string;
+  registryToken?: string;
+} {
+  const route = resolveInstrumentRegistry(instrument, {
+    url: DISTRIBUTION_REGISTRY_API_URL,
+    token: process.env['DISTRIBUTION_REGISTRY_TOKEN'],
+  });
+  if (!route) {
+    throw new AuthError(
+      400,
+      'distribution_asset_unsupported',
+      `Instrument ${instrument.id} (${instrument.admin}) is not a configured asset on this deployment`,
+    );
+  }
+  if (!route.registryApiUrl) {
+    throw new AuthError(
+      503,
+      'distribution_registry_not_configured',
+      'This asset has no registry configured; set DISTRIBUTION_REGISTRY_API_URL or REGISTRY_API_URL',
+    );
+  }
+  return route.registryToken
+    ? { registryApiUrl: route.registryApiUrl, registryToken: route.registryToken }
+    : { registryApiUrl: route.registryApiUrl };
+}
 
 /**
  * V1 transfer-instruction lane service — ports the proven settle/create logic
@@ -2031,7 +2063,20 @@ app.post('/api/v1/received/prepare-accept', async (req, res) => {
   try {
     const auth = await authorizeRequest(req, 'withdraw', authConfig);
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const result = await v1Lane.prepareAcceptReceived(auth.party, body['transferInstructionCid'] as string);
+    const instrument =
+      body['instrumentId'] === undefined ? undefined : parseInstrumentId(body['instrumentId']);
+    if (instrument && !resolveAssetForInstrument(instrument)) {
+      throw new AuthError(
+        400,
+        'unknown_asset',
+        `Instrument ${instrument.id} (${instrument.admin}) is not a configured asset on this deployment`,
+      );
+    }
+    const result = await v1Lane.prepareAcceptReceived(
+      auth.party,
+      body['transferInstructionCid'] as string,
+      instrument,
+    );
     res.json(serializeForJson(result));
   } catch (err) {
     handleError(res, err, 'prepareAcceptV1Received');
@@ -2135,11 +2180,19 @@ app.post('/api/distributions', async (req, res) => {
     if (endTime && endTime <= startTime) {
       throw new AuthError(400, 'invalid_input', 'Invalid endTime: must be after startTime');
     }
+    const instrumentId = parseInstrumentId(body['instrumentId']);
+    if (!resolveAssetForInstrument(instrumentId)) {
+      throw new AuthError(
+        400,
+        'distribution_asset_unsupported',
+        `Instrument ${instrumentId.id} (${instrumentId.admin}) is not a configured asset on this deployment`,
+      );
+    }
     const result = await createDistributionViaJson({
       streamId,
       operator,
       payerAccount,
-      instrumentId: parseInstrumentId(body['instrumentId']),
+      instrumentId,
       grossAmountPerPeriod,
       periodSeconds,
       startTime,
@@ -2168,13 +2221,7 @@ app.post('/api/distributions/:contractId/prepare-funding', async (req, res) => {
         'The current allocation runway must be exhausted before another allocation is funded',
       );
     }
-    if (!DISTRIBUTION_REGISTRY_API_URL) {
-      throw new AuthError(
-        503,
-        'distribution_registry_not_configured',
-        'Distribution funding requires DISTRIBUTION_REGISTRY_API_URL or REGISTRY_API_URL',
-      );
-    }
+    const registry = distributionRegistryFor(record.instrumentId);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const inputHoldingCidsRaw = body['inputHoldingCids'];
     if (!Array.isArray(inputHoldingCidsRaw) || inputHoldingCidsRaw.length === 0) {
@@ -2298,9 +2345,9 @@ app.post('/api/distributions/:contractId/prepare-funding', async (req, res) => {
       requestedAt,
       inputHoldingCids,
       nextIterationFunding,
-      registryApiUrl: DISTRIBUTION_REGISTRY_API_URL,
+      registryApiUrl: registry.registryApiUrl,
       allocationFactoryInterfaceId: DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID,
-      registryToken: process.env['DISTRIBUTION_REGISTRY_TOKEN'],
+      registryToken: registry.registryToken,
       meta: {
         'cantonstreams.dev/stream-id': record.streamId,
         'cantonstreams.dev/funding-id': fundingId,
@@ -2365,13 +2412,7 @@ app.post('/api/distributions/:contractId/prepare-recipient-authorization', async
         'The reconciled payer allocation has no settlement deadline',
       );
     }
-    if (!DISTRIBUTION_REGISTRY_API_URL) {
-      throw new AuthError(
-        503,
-        'distribution_registry_not_configured',
-        'Recipient authorization requires DISTRIBUTION_REGISTRY_API_URL or REGISTRY_API_URL',
-      );
-    }
+    const registry = distributionRegistryFor(record.instrumentId);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const receiverAccount = parseDistributionAccount(body['receiverAccount'], 'receiverAccount');
     enforceRole(auth.party, 'recipient', undefined, receiverAccount.owner);
@@ -2429,9 +2470,9 @@ app.post('/api/distributions/:contractId/prepare-recipient-authorization', async
       },
       settlementDeadline,
       requestedAt,
-      registryApiUrl: DISTRIBUTION_REGISTRY_API_URL,
+      registryApiUrl: registry.registryApiUrl,
       allocationFactoryInterfaceId: DISTRIBUTION_ALLOCATION_FACTORY_INTERFACE_ID,
-      registryToken: process.env['DISTRIBUTION_REGISTRY_TOKEN'],
+      registryToken: registry.registryToken,
       meta: {
         'cantonstreams.dev/stream-id': record.streamId,
         'cantonstreams.dev/recipient-authorization-id': authorizationId,
@@ -2480,15 +2521,9 @@ app.post('/api/distributions/:contractId/activate', async (req, res) => {
 app.post('/api/distributions/:contractId/prepare-settlement', async (req, res) => {
   try {
     await authorizeRequest(req, 'finalize', authConfig);
-    if (!DISTRIBUTION_REGISTRY_API_URL) {
-      throw new AuthError(
-        503,
-        'distribution_registry_not_configured',
-        'Distribution settlement requires DISTRIBUTION_REGISTRY_API_URL or REGISTRY_API_URL',
-      );
-    }
     const contractId = requireId(req.params['contractId'], 'contractId');
     const record = await getDistributionOrThrow(contractId);
+    const registry = distributionRegistryFor(record.instrumentId);
     if (record.status !== 'DistributionActive') {
       throw new AuthError(409, 'distribution_not_active', 'Distribution must be active to settle');
     }
@@ -2550,9 +2585,9 @@ app.post('/api/distributions/:contractId/prepare-settlement', async (req, res) =
       allocationCid: record.currentAllocationCid,
       recipientAuthorizations: record.recipientAuthorizations,
       nextIterationFunding,
-      registryApiUrl: DISTRIBUTION_REGISTRY_API_URL,
+      registryApiUrl: registry.registryApiUrl,
       settlementFactoryInterfaceId: DISTRIBUTION_SETTLEMENT_FACTORY_INTERFACE_ID,
-      registryToken: process.env['DISTRIBUTION_REGISTRY_TOKEN'],
+      registryToken: registry.registryToken,
       meta: {
         'cantonstreams.dev/stream-id': record.streamId,
         'cantonstreams.dev/settlement-sequence': String(record.settlementCount + 1),

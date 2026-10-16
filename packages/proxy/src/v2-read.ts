@@ -15,7 +15,9 @@
  * `{ microseconds }`, variants are `{ tag, value }`, enums are bare strings.
  */
 
-const JSON_API = (process.env['CANTON_JSON_API_URL'] ?? 'http://127.0.0.1:7575').replace(/\/+$/, '');
+import { activeContractsOverWebSocket, isAcsListLimit } from './acs-stream.js';
+
+const JSON_API =(process.env['CANTON_JSON_API_URL'] ?? 'http://127.0.0.1:7575').replace(/\/+$/, '');
 const LEDGER_TOKEN = process.env['CANTON_LEDGER_TOKEN'];
 
 const STREAM_ADMIN_TID = '#canton-streams:CantonStreams.Stream.StreamAdmin:StreamAdmin';
@@ -43,7 +45,12 @@ export async function jsonLedger(method: string, path: string, body?: unknown): 
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   const t = await res.text();
-  if (!res.ok) throw new Error(`json-ledger ${path} ${res.status}: ${t.slice(0, 200)}`);
+  if (!res.ok) {
+    if (method === 'POST' && isAcsListLimit(res.status, path, t)) {
+      return activeContractsOverWebSocket(JSON_API, LEDGER_TOKEN, body);
+    }
+    throw new Error(`json-ledger ${path} ${res.status}: ${t.slice(0, 200)}`);
+  }
   return t ? JSON.parse(t) : {};
 }
 

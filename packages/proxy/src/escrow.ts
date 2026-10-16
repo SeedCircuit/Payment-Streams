@@ -977,14 +977,23 @@ export class EscrowLane {
           );
         }
         const offerAmount = Number(offer.amount);
-        const ownedBefore = await escrowOwnedHoldings(this.config, instrument.holdingTemplateId);
+        const depositInstrument = { id: instrument.id, admin: instrument.admin };
+        const ownedBefore = await escrowOwnedHoldings(
+          this.config,
+          instrument.holdingTemplateId,
+          depositInstrument,
+        );
         await acceptOfferByCid(
           this.config,
           this.config.escrowParty,
           offer.transferInstructionCid,
           instrument.registryApiUrl,
         );
-        const ownedAfter = await escrowOwnedHoldings(this.config, instrument.holdingTemplateId);
+        const ownedAfter = await escrowOwnedHoldings(
+          this.config,
+          instrument.holdingTemplateId,
+          depositInstrument,
+        );
         // The accept has committed on-ledger; a failure past this point stranded
         // the payer's now-custodied funds, so log an out-of-band refund alert.
         if (ownedAfter + 1e-6 < ownedBefore + offerAmount) {
