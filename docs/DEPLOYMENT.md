@@ -159,8 +159,8 @@ startup checks documented in [MainNet readiness](./MAINNET-READINESS.md).
 | `PROXY_SERVICE_TOKEN`       | (none)                          | Service JWT for finalize / auto-withdraw routes                |
 | `PROXY_ESCROW_OPERATOR`     | (none)                          | Escrow-operator party id                                       |
 | `PROXY_DISTRIBUTION_OPERATOR` | `PROXY_ESCROW_OPERATOR`       | Hosted service party that signs distribution schedule records  |
-| `DISTRIBUTION_REGISTRY_API_URL` | `REGISTRY_API_URL`          | V2 token registry base, such as the bare CC Scan host           |
-| `DISTRIBUTION_REGISTRY_TOKEN` | (none)                         | Optional bearer token for registries that require authentication |
+| `DISTRIBUTION_REGISTRY_API_URL` | `REGISTRY_API_URL`          | Fallback V2 registry for assets without their own, such as the bare CC Scan host; an asset with its own registry base (USDCx) uses that |
+| `DISTRIBUTION_REGISTRY_TOKEN` | (none)                         | Optional bearer token for the fallback registry only           |
 | `V2_ALLOCATION_FACTORY_INTERFACE_ID` | package-name reference    | Optional explicit AllocationFactory interface override         |
 | `V2_SETTLEMENT_FACTORY_INTERFACE_ID` | package-name reference    | Optional explicit SettlementFactory interface override         |
 | `ESCROW_DISCLOSED_CUSTODY`  | `false`                         | Set `true` to knowingly run the operator-custodial money-leg when the payer is co-hosted on the operator participant |

@@ -23,8 +23,11 @@ Distribution streams require a Token Standard V2 asset. They use:
 - `nextIterationFunding` to carry unused runway into the next period.
 
 Use an ordinary single-recipient stream if every payment has only one
-destination. V1 assets do not support this atomic iterated batch-settlement
-flow.
+destination, unless the recipient cannot pre-approve incoming transfers. USDCx
+has no pre-approval API, so a direct USDCx transfer always waits for the
+recipient to accept it; a distribution, even with a single destination, has the
+recipient authorize once per funded runway instead. V1 assets do not support
+this atomic iterated batch-settlement flow.
 
 ## Custody And DAR Deployment
 
@@ -77,6 +80,14 @@ PROXY_DISTRIBUTION_OPERATOR=Operator::1220...
 DISTRIBUTION_REGISTRY_API_URL=https://scan.example.com
 ```
 
+Each distribution's factories are fetched from its own asset's registry. The
+proxy matches the record's instrument (admin and id) to a configured asset (see
+[Per-Asset Configuration](./per-asset-config.md)): an asset with its own
+registry base, such as USDCx, uses it, and Canton Coin falls back to
+`DISTRIBUTION_REGISTRY_API_URL`. `POST /api/distributions` rejects an
+instrument that is not a configured asset with `400
+distribution_asset_unsupported`.
+
 `PROXY_DISTRIBUTION_OPERATOR` may be omitted when `PROXY_ESCROW_OPERATOR`
 already names the service party hosted by this participant. It is the
 non-custodial schedule operator, not the V1 `ESCROW_PARTY`; using the same party
@@ -87,7 +98,8 @@ settlement interfaces. `V2_ALLOCATION_FACTORY_INTERFACE_ID` and
 `V2_SETTLEMENT_FACTORY_INTERFACE_ID` are optional overrides for deployments
 that require explicit package ids. `DISTRIBUTION_REGISTRY_TOKEN` is also
 optional and should remain unset for a public registry such as CC Scan. Set it
-only when the selected asset registry requires bearer authentication.
+only when that fallback registry requires bearer authentication; it is never
+sent to an asset's own registry.
 
 The participant hosting the operator must upload and vet a `canton-streams`
 1.4.0 DAR built against the exact official Token Standard DARs used by the
@@ -248,6 +260,9 @@ results.
   dashboard already does this for funding and receiver authorization.
 - Match settlement results to the returned `allocationOrder`; never infer a
   recipient replacement cid from list position maintained elsewhere.
+- When telling the payer's allocation from a recipient's, treat an empty
+  `nextIterationFunding` as absent. Canton Coin reports `null`; DA Utility
+  tokens such as USDCx report `{}`.
 - Run settlement idempotently using the record sequence and confirmed update id.
 - Monitor funded runway and ask the payer to approve the next runway when the
   current allocation chain is exhausted.
