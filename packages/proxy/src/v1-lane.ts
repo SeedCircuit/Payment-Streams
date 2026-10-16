@@ -888,7 +888,6 @@ export async function verifyHoldingDeliveryOnScan(
  * withdraw, which reclaims funds rather than delivering them, so there is nothing
  * to credit — only the tracked offer's consumption to confirm, so a stray update
  * can't mark the wrong offer withdrawn. */
-/** An accept and a withdraw both consume an offer; only the choice tells them apart. */
 export function participantUpdateConsumesWith(update: any, cid: string, choice: string): boolean {
   const events: any[] = update?.update?.Transaction?.value?.events ?? [];
   return events.some((e) => {
@@ -917,8 +916,6 @@ export type OfferFate =
   | { kind: 'accepted' | 'returned'; updateId: string }
   | { kind: 'unknown' };
 
-/** Only an accept delivers; a withdraw or reject returns the funds. Any other
- *  consumption, such as a registry update re-creating the instruction, is unknown. */
 export function classifyOfferConsumption(update: unknown, cid: string): OfferFate {
   const updateId = String((update as any)?.update?.Transaction?.value?.updateId ?? '');
   if (participantUpdateConsumesWith(update, cid, OFFER_ACCEPT)) return { kind: 'accepted', updateId };
@@ -954,9 +951,6 @@ async function offerFate(config: V1LaneConfig, cid: string, parties: string[]): 
   }
 }
 
-/** Non-CC transfers never reach Canton Coin's Scan, so confirm the consumption
- *  on this participant, reading as whichever stream parties it hosts. Fails
- *  closed when none are hosted or the update is not visible to them. */
 async function verifyContractConsumedOnParticipant(
   config: V1LaneConfig,
   updateId: string,
@@ -1090,8 +1084,6 @@ interface Holding {
   amount: number;
 }
 
-/** A registry holding template is shared by every token it issues. Amulet
- *  holdings carry no instrument; the template identifies them. */
 export function holdingMatchesInstrument(
   createArgument: any,
   instrument: { id: string; admin: string },
@@ -1259,13 +1251,10 @@ function offerTransfer(ev: any): any {
   return {};
 }
 
-/** The registry serving an instrument's transfer instructions; undefined means
- *  the lane default (Canton Coin's Scan). */
 export function registryBaseForInstrument(instrument: { admin: string; id: string }): string | undefined {
   return resolveAssetForInstrument(instrument)?.registryApiUrl || undefined;
 }
 
-/** V1 transfers name parties directly; V2 wraps them in an Account. */
 export function accountParty(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value && typeof value === 'object') {
@@ -3054,8 +3043,6 @@ export class V1LaneService {
     }
   }
 
-  /** Resolve outstanding offers from the ledger before offering another cycle.
-   *  Returns the first offer still live or undeterminable, which blocks it. */
   private async reconcileOutstandingOffers(
     store: V1Store,
     agreement: V1Agreement,
@@ -3145,8 +3132,6 @@ export class V1LaneService {
       return { settled: false, reason: 'nothing_due' };
     }
 
-    // A cycle whose earlier offer came back is re-offered under a fresh command
-    // id; a crash retry of the same attempt still dedupes on the ledger.
     const cycleNo = st.cycles + 1;
     const attempt = pendingRecords(st).filter((r) => r.cycle === cycleNo).length;
     const result = await settleCycle(this.config, agreement, due, cycleNo, attempt);

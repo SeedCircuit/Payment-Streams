@@ -104,8 +104,6 @@ export interface InstrumentRegistryRoute {
   registryToken?: string;
 }
 
-/** The registry serving an instrument's token-standard factories. The fallback
- *  token belongs to the fallback registry and is never sent to an asset's own. */
 export function resolveInstrumentRegistry(
   instrument: { admin: string; id: string },
   fallback: { url: string; token?: string | undefined },

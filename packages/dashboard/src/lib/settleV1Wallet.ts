@@ -447,7 +447,6 @@ function rawHoldingAmount(args: Record<string, unknown>): string | undefined {
  * neither is found, so the caller omits the proof and the proxy falls back to
  * its interim trust path rather than hard-failing the settle.
  */
-/** V1 transfers name parties directly; V2 wraps them in an Account. */
 export function accountParty(value: unknown): string {
   if (typeof value === 'string') return value;
   const owner = asRecord(value)?.['owner'];

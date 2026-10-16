@@ -3,15 +3,10 @@ import WebSocket from 'ws';
 export const ACS_PATH = '/v2/state/active-contracts';
 const LIST_LIMIT_CODE = 'JSON_API_MAXIMUM_LIST_ELEMENTS_NUMBER_REACHED';
 
-/** The participant refuses an HTTP snapshot larger than its
- *  http-list-max-elements-limit; the same request streamed over WebSocket is
- *  not capped. */
 export function isAcsListLimit(status: number, path: string, responseText: string): boolean {
   return status === 413 && path === ACS_PATH && responseText.includes(LIST_LIMIT_CODE);
 }
 
-/** Same rows as the HTTP endpoint. Rejects on an error frame or abnormal close
- *  so a truncated snapshot is never returned. */
 export function activeContractsOverWebSocket(
   apiUrl: string,
   token: string | undefined,
