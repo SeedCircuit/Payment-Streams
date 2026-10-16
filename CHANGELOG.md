@@ -23,6 +23,8 @@ All notable changes to Canton Payment Streams are documented here. The format is
 - Accepting a non-CC offer from the inbox uses that asset's registry instead of Canton Coin's Scan; `prepare-accept` takes an optional `instrumentId`.
 - Accepts and reclaims of non-CC offers are confirmed on the proxy's participant, which can see them, rather than on Scan, which cannot; an accept can no longer be recorded as a reclaim.
 - Dashboard distribution funding passes the asset's holding template, so wallets that only accept template filters can fund non-CC distributions.
+- Distributions funded for more than one period settle every period from the recipients' single authorization: each rolled recipient allocation is given its own receiver legs for the next period, and the registry context is requested with them.
+- A wallet-hosted recipient's inbox lists incoming USDCx offers alongside Canton Coin ones and accepts them through USDCx's registry (`USDCX_OFFER_TEMPLATE_ID`, defaulting to the DA Utility `TransferOffer`).
 
 ## [1.0.0] - 2026-07-23
 
